@@ -1,0 +1,17 @@
+{
+  "name": "layout16x4_shape12x12x24",
+  "replicate": "12x12x24",
+  "atoms": 252222336,
+  "nodes": 16,
+  "dcus": 64,
+  "dcus_per_node": 4,
+  "steps": 1000,
+  "cut_off": 9,
+  "r_core": 5,
+  "rbl_sample": 30,
+  "rbe_sample": 200,
+  "mpi_grid_expected": "4x4x4",
+  "local_replicate_expected": "3x3x6",
+  "purpose": "shape-aligned local 3x3x6 domain matching the 32-DCU point",
+  "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_weak64_shape_layout_control_20260816/cases/layout16x4_shape12x12x24"
+}

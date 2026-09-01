@@ -1,0 +1,15 @@
+{
+  "created": "2026-08-15",
+  "purpose": "Full corrected LJ-salt RBMD strong/weak scaling rerun",
+  "source": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/ljsalt",
+  "root": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/ljsalt_scaling_RBE200_RBL30_20260815",
+  "cases": 12,
+  "parameters": {
+    "cut_off": 8.0,
+    "r_core": 4.0,
+    "RBL_sample": 30,
+    "RBE_sample": 200
+  },
+  "change_policy": "Only neighbor_sample_num and coulomb_sample_num differ from source run.json; run.slurm files are byte-identical and contain no active --exclusive.",
+  "submission_policy": "At most one strong and one weak case active; campaign-local waiter only."
+}

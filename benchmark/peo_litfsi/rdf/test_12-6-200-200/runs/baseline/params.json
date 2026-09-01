@@ -1,0 +1,8 @@
+{
+  "neighbor_type": "RBL",
+  "cut_off": 12,
+  "r_core": 6,
+  "neighbor_sample_num": 200,
+  "coulomb_type": "RBE",
+  "coulomb_sample_num": 200
+}

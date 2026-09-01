@@ -1,0 +1,13 @@
+{
+  "order": 6,
+  "method": "RBMD",
+  "name": "rbmd_64dcu_grid4x4x4",
+  "nodes": 16,
+  "dcus": 64,
+  "atoms": 15763896,
+  "replicate": "6x6x6",
+  "steps": 1000,
+  "processor_grid": "4x4x4",
+  "local_replica_ratio": "1.5x1.5x1.5",
+  "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/rbmd_64dcu_grid4x4x4"
+}

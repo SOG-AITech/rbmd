@@ -1,0 +1,19 @@
+{
+  "created": "2026-08-15",
+  "purpose": "Corrected LJ-salt RBMD missing 1/2-DCU and fixed-4-DCU linear complexity",
+  "parameters": {
+    "cut_off": 8.0,
+    "r_core": 4.0,
+    "RBL_sample": 30,
+    "RBE_sample": 200,
+    "accuracy": 0.0001
+  },
+  "invalid_predecessor_jobs": [
+    746426,
+    746427,
+    746428,
+    746429,
+    746430
+  ],
+  "case_count": 6
+}

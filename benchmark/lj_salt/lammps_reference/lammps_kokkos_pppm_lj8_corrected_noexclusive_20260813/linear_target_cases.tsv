@@ -1,0 +1,4 @@
+cutoff	mode	nodes	gpus	atoms	replicate_x	replicate_y	replicate_z	case_dir
+8	linear	1	4	3600000	3	3	2	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_corrected_noexclusive_20260813/lj_salt/linear/atoms_3600000
+8	linear	1	4	7200000	3	4	3	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_corrected_noexclusive_20260813/lj_salt/linear/atoms_7200000
+8	linear	1	4	14400000	4	6	3	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_corrected_noexclusive_20260813/lj_salt/linear/atoms_14400000

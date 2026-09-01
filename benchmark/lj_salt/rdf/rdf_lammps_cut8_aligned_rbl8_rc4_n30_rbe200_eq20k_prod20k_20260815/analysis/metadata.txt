@@ -1,0 +1,6 @@
+sampled_frames=2000
+sampled_step_min=10
+sampled_step_max=20000
+bins=800
+rmax=8
+parallel_workers=32

@@ -1,0 +1,458 @@
+#pragma once
+
+#ifndef USE_CCL
+#define USE_CCL 0
+#endif
+
+#if defined(__CUDA)
+    #include <cuda_runtime.h>
+    #include <cuda_runtime_api.h>
+    #if USE_CCL
+    #include <nccl.h>
+    #endif
+    #include <thrust/device_vector.h>
+    #include <cub/cub.cuh>
+    #include <cmath>
+    #include <thrust/gather.h>
+    #include <thrust/sort.h>
+    #include <thrust/copy.h>
+    #include <thrust/reduce.h>
+#elif defined (__ROCM)
+    #include <hip/hip_runtime.h>
+    #include <hip/hip_runtime_api.h>
+    #if USE_CCL
+    #include <rccl/rccl.h>
+    #endif
+    #include <thrust/device_vector.h>
+    #include <hipcub/hipcub.hpp>
+    #include <thrust/gather.h>
+    #include <thrust/sort.h>
+    #include <thrust/copy.h>
+    #include <thrust/reduce.h>
+    #include <hipcub/backend/rocprim/device/device_radix_sort.hpp>
+    #include <hipcub/backend/rocprim/iterator/counting_input_iterator.hpp>
+#else
+     #error "This code must be compiled with either HIP or CUDA."
+#endif
+
+#if __has_include(<mpi.h>)
+    #include <mpi.h>
+#elif __has_include("mpi.h")
+    #include "mpi.h"
+#endif
+
+
+#include "types.h"
+#if USE_DOUBLE
+#define EPSILON 0.0001
+#define RBMD_PI 3.14159265358979323846
+#define MPI_RBMD_REAL MPI_DOUBLE
+#else
+#define EPSILON 0.0001f
+#define RBMD_PI 3.14159265358979323846f
+#define MPI_RBMD_REAL MPI_FLOAT
+#endif
+
+#if USE_64BIT_IDS
+#define MPI_RBMD_ID MPI_LONG_LONG
+#else
+#define MPI_RBMD_ID MPI_INT
+#endif
+
+#define SAFE_ZONE (1.2)
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define BLOCK_SIZE (256)
+#define MAX_GPU_STREAMS (6)
+#define RBMD_TRUE (1)
+#define RBMD_FALSE (0)
+#define LEAVING_TAG 1001
+#define HALO_TAG 1002
+
+#ifndef TARGET_DCU
+#define MIN_NBNUM \
+(128)  /// CUDA AMD6800xt 96 DCU 128   TODO kernel us it  can use warpSize?
+#define WARP_SIZE (32)  /// CUDA AMD6800xt 32  DCU 64   TODO
+#else
+#if !defined(WARP_SIZE_64)
+#error "WARP_SIZE_64 must be defined by CMake as 0 or 1."
+#endif
+#define MIN_NBNUM (96)
+#if WARP_SIZE_64
+#define WARP_SIZE (64)
+#else
+#define WARP_SIZE (32)
+#endif
+#endif
+
+// #define MIN_NBNUM (96)
+// #define WARP_SIZE (32)
+
+#if USE_DOUBLE
+    #if defined(__ROCM)
+        #define REAL_DATA(vec) (vec.data)
+    #elif defined(__CUDA)
+        #define REAL_DATA(vec) (const_cast<double*>(reinterpret_cast<const double*>(&vec)))
+    #endif
+typedef double3 Real3;
+typedef double2 Real2;
+
+// double7 定义
+struct double7 {
+  double4 a;  // x, y, z, w
+  double3 b;  // u, v, t
+
+  // 支持下标访问
+  __host__ __device__ float& operator[](int idx) {
+    switch (idx) {
+      case 0: return a.x;
+      case 1: return a.y;
+      case 2: return a.z;
+      case 3: return a.w;
+      case 4: return b.x;
+      case 5: return b.y;
+      case 6: return b.z;
+      default: return a.x; // 越界返回第一个元素（或抛出异常）
+    }
+  }
+
+  // const 版本
+  __host__ __device__ const float& operator[](int idx) const {
+    switch (idx) {
+      case 0: return a.x;
+      case 1: return a.y;
+      case 2: return a.z;
+      case 3: return a.w;
+      case 4: return b.x;
+      case 5: return b.y;
+      case 6: return b.z;
+      default: return a.x;
+    }
+  }
+};
+typedef double7 Real7;
+
+#define make_Real3 make_double3
+#define make_Real2 make_double2
+#define POW pow
+#define CEIL ceil
+#define FLOOR floor
+#define SQRT sqrt
+#define ERF erf
+#define ERFC erfc
+#define EXP exp
+#define COS cos
+#define SIN sin
+#define ROUND round
+#define LOG log
+#define ABS fabs
+#define ACOS acos
+#define NEXTAFTER nextafter
+#define RINT rint
+
+#else
+    #if defined(__ROCM)
+        #define REAL_DATA(vec) (vec.data)
+    #elif defined(__CUDA)
+        #define REAL_DATA(vec) (const_cast<float*>(reinterpret_cast<const float*>(&vec)))
+    #endif
+typedef float3 Real3;
+typedef float2 Real2;
+
+// float7 定义
+struct float7 {
+  float4 a;  // x, y, z, w
+  float3 b;  // u, v, t
+
+  // 支持下标访问
+  __host__ __device__ float& operator[](int idx) {
+    switch (idx) {
+      case 0: return a.x;
+      case 1: return a.y;
+      case 2: return a.z;
+      case 3: return a.w;
+      case 4: return b.x;
+      case 5: return b.y;
+      case 6: return b.z;
+      default: return a.x; // 越界返回第一个元素（或抛出异常）
+    }
+  }
+
+  // const 版本
+  __host__ __device__ const float& operator[](int idx) const {
+    switch (idx) {
+      case 0: return a.x;
+      case 1: return a.y;
+      case 2: return a.z;
+      case 3: return a.w;
+      case 4: return b.x;
+      case 5: return b.y;
+      case 6: return b.z;
+      default: return a.x;
+    }
+  }
+};
+typedef float7 Real7;
+
+#define make_Real3 make_float3
+#define make_Real2 make_float2
+#define POW powf
+#define CEIL ceilf
+#define FLOOR floorf
+#define SQRT sqrtf
+#define ERF erff
+#define ERFC erfcf
+#define EXP expf
+#define COS cosf
+#define SIN sinf
+#define ROUND roundf
+#define LOG logf
+#define ABS fabsf
+#define ACOS acosf
+#define NEXTAFTER nextafterf
+#define RINT rintf
+
+#endif
+
+#if USE_64BIT_IDS
+typedef longlong3 Int3;
+#define make_Int3 make_longlong3
+#else
+  #if defined(__ROCM)
+    #define INT_DATA(vec) (vec.data)
+  #elif defined(__CUDA)
+    #define INT_DATA(vec) (const_cast<int*>(reinterpret_cast<const int*>(&vec)))
+  #endif
+
+typedef int3 Id3;
+typedef int3 Int3;
+typedef int2 Id2;
+#define make_Int3 make_int3
+#endif
+
+//
+#define ALIGN_SIZE(type, n) \
+  ((sizeof(type) > 4) ? NEXT_POWER_OF_TWO(n) * 8 : NEXT_POWER_OF_TWO(n) * 4)
+
+#if defined(__GNUC__) || defined(__CUDA)  // GCC
+#define IS_POWER_OF_TWO(x) (((x) & ((x) - 1)) == 0)
+#define NEXT_POWER_OF_TWO(n)      \
+  ((n) == 0 ? 1                   \
+            : (IS_POWER_OF_TWO(n) \
+                   ? (n)          \
+                   : (1 << (sizeof(n) * 8 - __builtin_clz((n) - 1)))))
+
+#elif defined(_MSC_VER)  // MSVC   TODO：
+#include <intrin.h>
+#define IS_POWER_OF_TWO(x) (((x) & ((x) - 1)) == 0)
+#define NEXT_POWER_OF_TWO(n)       \
+  ((n) == 0                        \
+       ? 1                         \
+       : (IS_POWER_OF_TWO(n) ? (n) \
+                             : (1 << (sizeof(n) * 8 - _lzcnt_u32((n) - 1)))))
+
+#else
+#error "Unsupported compiler"
+#endif
+
+#if defined(__CUDA)  // NVCC   //TODO
+#define ALIGN(n) __align__(n)
+#elif defined(__GNUC__)  // GCC
+#define ALIGN(n) __attribute__((aligned(n)))
+#elif defined(_MSC_VER)  // MSVC
+#define ALIGN(n) __declspec(align(n))
+#else
+#error "Please provide a definition for ALIGN macro for your host compiler!"
+#endif
+
+#if defined (__CUDA)
+    #define MALLOC cudaMalloc
+    #define MALLOCHOST(ptr, size) cudaHostAlloc((void**)ptr, size,cudaHostAllocDefault)
+    #define MEMCPY cudaMemcpy
+    #define H2D cudaMemcpyHostToDevice
+    #define H2H cudaMemcpyHostToHost
+    #define D2H cudaMemcpyDeviceToHost
+    #define D2D cudaMemcpyDeviceToDevice
+    #define FREE cudaFree
+    #define FREE_PINNED_HOST cudaFreeHost
+
+    #define MEMSET cudaMemset
+    #define REDUCE cub::DeviceReduce::Sum
+    #define ERROR_T cudaError_t
+    #define SUCCESS cudaSuccess
+    #define GETERRORSTRING cudaGetErrorString
+    #define GETERRORNAME cudaGetErrorName
+    #define LASTERROR cudaPeekAtLastError
+    #define EXCLUSIVESUM cub::DeviceScan::ExclusiveSum
+    #define WARPREDUCE cub::WarpReduce
+    #define WARPSCAN cub::WarpScan
+    #define SHUFFLEINDEX cub::ShuffleIndex
+    #define BLOCKREDUCE cub::BlockReduce
+    #define DEVICESYNC cudaDeviceSynchronize
+    #define SET_DEVICE cudaSetDevice
+    #define MEMGETINFO cudaMemGetInfo
+    #define STREAM cudaStream_t
+    using STREAM_T = cudaStream_t;
+    #define STREAM_CREATE  cudaStreamCreate
+    #define MEMCPY_ASYNC cudaMemcpyAsync
+    #define STREAM_SYNC    cudaStreamSynchronize
+    #define STREAM_DESTORY cudaStreamDestroy
+    #define STREAM_DESTROY cudaStreamDestroy
+    #define NEW_FLAG_EVENT cudaEventCreateWithFlags
+    #define EVENT_DISABLE cudaEventDisableTiming
+    #define EVENT_DESTORY cudaEventDestroy
+    #define EVENT_RECORD cudaEventRecord
+    #define EVENT_SYNC cudaEventSynchronize
+    #define EVENT_T cudaEvent_t
+
+
+    #define SHFL_DOWN_SYNC(mask, var, delta, width) __shfl_down_sync(mask, var, delta, width)
+    #define SHFL_UP_SYNC(mask, var, delta, width) __shfl_up_sync(mask, var, delta, width)
+    #define SHFL_XOR_SYNC(mask, var, lane_mask, width) __shfl_xor_sync(mask, var, lane_mask, width)
+    #define SYNCWARP(mask) __syncwarp(mask)
+#elif defined (__ROCM)
+    #define MALLOC hipMalloc
+    #define MALLOCHOST hipHostMalloc
+    #define MEMCPY hipMemcpy
+    #define H2D hipMemcpyHostToDevice
+    #define H2H hipMemcpyHostToHost
+    #define D2H hipMemcpyDeviceToHost
+    #define D2D hipMemcpyDeviceToDevice
+    #define FREE hipFree
+    #define FREE_PINNED_HOST hipFreeHost
+    #define MEMSET hipMemset
+    #define REDUCE hipcub::DeviceReduce::Sum
+    #define ERROR_T hipError_t
+    #define SUCCESS hipSuccess
+    #define GETERRORSTRING hipGetErrorString
+    #define GETERRORNAME hipGetErrorName
+    #define LASTERROR hipPeekAtLastError
+    #define EXCLUSIVESUM hipcub::DeviceScan::ExclusiveSum
+    #define WARPREDUCE hipcub::WarpReduce
+    #define WARPSCAN hipcub::WarpScan
+    #define SHUFFLEINDEX hipcub::ShuffleIndex
+    #define BLOCKREDUCE hipcub::BlockReduce
+    #define DEVICESYNC hipDeviceSynchronize
+    #define SET_DEVICE hipSetDevice
+    #define MEMGETINFO hipMemGetInfo
+    #define STREAM hipStream_t
+    using STREAM_T = hipStream_t;
+    #define STREAM_CREATE  hipStreamCreate
+    #define MEMCPY_ASYNC hipMemcpyAsync
+    #define STREAM_SYNC hipStreamSynchronize
+    #define STREAM_DESTORY hipStreamDestroy
+    #define STREAM_DESTROY hipStreamDestroy
+    #define NEW_FLAG_EVENT hipEventCreateWithFlags
+    #define EVENT_DISABLE hipEventDisableTiming
+    #define EVENT_DESTORY hipEventDestroy
+    #define EVENT_RECORD hipEventRecord
+    #define EVENT_SYNC hipEventSynchronize
+    #define EVENT_T hipEvent_t
+
+
+    #define SHFL_DOWN_SYNC(mask, var, delta, width) __shfl_down(var, delta, width)
+    #define SHFL_UP_SYNC(mask, var, delta, width) __shfl_up(var, delta, width)
+    #define SHFL_XOR_SYNC(mask, var, lane_mask, width) __shfl_xor(var, lane_mask, width)
+    #define SYNCWARP(mask) __builtin_amdgcn_wave_barrier()
+#endif
+
+
+#define FREEHOST free
+
+
+template <typename T>
+static T *raw_ptr(thrust::device_vector<T> &vec) {
+  return thrust::raw_pointer_cast(vec.data());
+}
+
+
+#define CHECK_RUNTIME(call) CheckRunTime(call, #call, __LINE__, __FILE__)
+static bool CheckRunTime(ERROR_T e, const char* call, int line,
+    const char* file)
+{
+    if (e != SUCCESS) {
+        printf("Runtime error %s # %s, code = %s [ %d ] in file %s:%d", call,
+            GETERRORSTRING(e), GETERRORNAME(e), e, file, line);
+        return false;
+    }
+    return true;
+}
+
+#define CHECK_KERNEL(...)                                               \
+  __VA_ARGS__;                                                          \
+  do {                                                                  \
+    ERROR_T err = LASTERROR();                       \
+    if (err != SUCCESS) {                                     \
+      printf("Launch Kernel Failed:  %s:%d '%s'\n", __FILE__, __LINE__, \
+             GETERRORSTRING(err));                            \
+      exit(EXIT_FAILURE);                                               \
+    }                                                                   \
+  } while (0);
+
+#define MPI_CHECK(cmd)                                                 \
+  do {                                                                 \
+    int e = cmd;                                                       \
+    if (e != MPI_SUCCESS) {                                            \
+      printf("Failed: MPI error %s:%d '%d'\n", __FILE__, __LINE__, e); \
+      exit(EXIT_FAILURE);                                              \
+    }                                                                  \
+  } while (0)
+
+#if USE_CCL
+#define NCCL_CHECK(cmd)                                             \
+  do {                                                              \
+    ncclResult_t r = cmd;                                           \
+    if (r != ncclSuccess) {                                         \
+      printf("Failed, NCCL error %s:%d '%s'\n", __FILE__, __LINE__, \
+             ncclGetErrorString(r));                                \
+      exit(EXIT_FAILURE);                                           \
+    }                                                               \
+  } while (0)
+#endif
+
+
+template <typename T>
+// d_src_array input array  d_dst outputnum size：input array size
+static void ReductionSum(T* d_src_array, T* d_dst, rbmd::Id size) {
+    auto first = thrust::device_pointer_cast(d_src_array);
+    auto last = first + size;
+    *thrust::device_pointer_cast(d_dst) = thrust::reduce(first, last, T{});
+}
+
+
+template<typename Tuple, std::size_t... I>
+__device__ rbmd::Real SumTuple(const Tuple& forces_tuple, std::index_sequence<I...>) {
+  return (thrust::get<I>(forces_tuple) + ...);
+}
+
+
+template<typename Result, typename... Forces>
+void SumforcesDirection(Result& result, Forces&... forces)
+{
+
+  auto zip_begin = thrust::make_zip_iterator(thrust::make_tuple(forces.begin()...));
+  auto zip_end = thrust::make_zip_iterator(thrust::make_tuple(forces.end()...));
+
+  thrust::transform(
+      zip_begin, zip_end, result.begin(),
+      [] __device__ (auto forces_tuple) {
+          constexpr std::size_t num_forces = thrust::tuple_size<decltype(forces_tuple)>::value;
+          return SumTuple(forces_tuple, std::make_index_sequence<num_forces>{});
+      }
+  );
+}
+
+template<typename... Forces>
+void TransformForces(
+    thrust::device_vector<rbmd::Real>& result_f,
+    Forces&... forces)
+{
+  SumforcesDirection(result_f, forces...);
+}
+
+inline  char* StrDup(const std::string &text)
+{
+  auto tmp = new char[text.size() + 1];
+  strcpy(tmp, text.c_str());
+  return tmp;
+}

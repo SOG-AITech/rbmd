@@ -1,0 +1,2 @@
+submitted_at	job_id	case_dir	fft_backend	nodes	dcus	atoms	steps
+2026-08-15T07:33:56+08:00	745767	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_complete64_noexclusive_20260814/lj_salt/strong/nodes_01_hipfft1000_20260815	HIPFFT	1	4	28000000	1000

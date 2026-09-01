@@ -1,0 +1,6 @@
+label	system	mode	nodes	gpus	atoms	rx	ry	rz	case_dir
+lj8_strong_dcu01	lj_salt	strong	1	1	28000000	5	7	4	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_complete64_noexclusive_20260814/lj_salt/strong/node_01_dcu_01
+lj8_strong_dcu02	lj_salt	strong	1	2	28000000	5	7	4	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_complete64_noexclusive_20260814/lj_salt/strong/node_01_dcu_02
+lj8_weak_dcu01	lj_salt	weak	1	1	7000000	5	7	1	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_complete64_noexclusive_20260814/lj_salt/weak/node_01_dcu_01
+lj8_weak_dcu02	lj_salt	weak	1	2	14000000	5	7	2	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_complete64_noexclusive_20260814/lj_salt/weak/node_01_dcu_02
+lj8_weak_n08	lj_salt	weak	8	32	224000000	10	14	8	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_complete64_noexclusive_20260814/lj_salt/weak/nodes_08

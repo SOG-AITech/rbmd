@@ -1,0 +1,269 @@
+#include "lj.h"
+#include "force_box_selector.h"
+
+#include <output/include/Logger.hpp>
+
+#include "../../common/device_types.h"
+#include "../../common/rbmd_define.h"
+#include "../../common/types.h"
+#include "lj_op/lj_op.h"
+#include "force_op/force_op.h"
+#include "neighbor_list/include/linked_cell/linked_cell_locator.h"
+#include "neighbor_list/include/neighbor_list_builder/full_neighbor_list_builder.h"
+#include "neighbor_list/include/neighbor_list_builder/rbl_full_neighbor_list_builder.h"
+#include "common/mpi_reduce_helper.hpp"
+#include "common/mpi_root_guard.hpp"
+#include "common/timing_statistics.hpp"
+#include "common/thermo_stats.hpp"
+// #include <hipcub/hipcub.hpp>
+// #include <hipcub/backend/rocprim/block/block_reduce.hpp>
+extern rbmd::Id test_current_step;
+rbmd::Real test_e_pe_rbl;
+rbmd::Real test_e_pe_init;
+LJ::LJ() {
+  _rbl_neighbor_list_builder = std::make_shared<RblFullNeighborListBuilder>();
+  _neighbor_list_builder = std::make_shared<FullNeighborListBuilder>();
+  if (rbmd::mpi::ShouldWriteRootOnlyOutput()) {
+    std::remove("thermo.txt");
+  }
+}
+
+LJ::~LJ()
+{
+}
+
+void LJ::Init() {
+  const auto& config = DataManager::getInstance().getConfigData();
+
+  //neighbor
+  _cut_off = config->Get<rbmd::Real>("cut_off", "hyper_parameters", "neighbor");
+  _neighbor_type = config->Get<std::string>("type", "hyper_parameters", "neighbor");
+  if("RBL" == _neighbor_type) {
+    bool energy_rbl_flag = config->PathExists({"hyper_parameters", "neighbor" ,"energy_rbl_flag"});
+    if (energy_rbl_flag) {
+      _energy_rbl_flag = config->Get<std::string>("energy_rbl_flag", "hyper_parameters", "neighbor");
+    }
+    else {
+      Logger::Instance().error( "\033[31m When using RBL for the neighbor type, "
+                   "the key 'energy_rbl_flag' must be defined.\033[0m");
+      exit(EXIT_FAILURE); //
+    }
+  }
+}
+
+void LJ::Execute()
+{
+  if (_neighbor_type == "RBL")  // RBL
+  {
+    ComputeLJRBL();
+  }
+  else  //
+  {
+    ComputeLJVerlet();
+  }
+
+  //add thermo
+  ThermoStats::Instance().AddThermoData("vdwl",_e_vdwl);
+  //
+  EvaluatePotentialEnergy();
+}
+
+void LJ::ComputeLJRBL()
+{
+    // rbl_neighbor_list_build
+    auto start = std::chrono::high_resolution_clock::now();
+    _rbl_list = _rbl_neighbor_list_builder->Build();
+
+    auto end = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<rbmd::Real> duration = end - start;
+    TimingStatistics::Instance().record("Neighbor-List",duration.count());
+
+    // compute force
+    auto start_rbl_force = std::chrono::high_resolution_clock::now();
+    const auto r_core =
+        DataManager::getInstance().getConfigData()->Get<rbmd::Real>(
+            "r_core", "hyper_parameters", "neighbor");
+
+    const auto neighbor_sample_num =
+        DataManager::getInstance().getConfigData()->Get<rbmd::Id>(
+            "neighbor_sample_num", "hyper_parameters", "neighbor");
+
+    auto num_atoms = *(_structure_info_data->_num_atoms);
+    const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
+    op::LJRBLForceOp<device::DEVICE_GPU>()(
+        force_box, r_core, _cut_off,
+        num_atoms,neighbor_sample_num,_rbl_list->_selection_frequency,
+        thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
+        thrust::raw_pointer_cast(_device_data->_d_sigma.data()),
+        thrust::raw_pointer_cast(_device_data->_d_eps.data()),
+        thrust::raw_pointer_cast(_rbl_list->_start_idx.data()),
+        thrust::raw_pointer_cast(_rbl_list->_end_idx.data()),
+        thrust::raw_pointer_cast(_rbl_list->_d_neighbors.data()),
+        thrust::raw_pointer_cast(_rbl_list->_d_random_neighbor.data()),
+        thrust::raw_pointer_cast(_rbl_list->_d_random_neighbor_num.data()),
+        thrust::raw_pointer_cast(_device_data->_d_px.data()),
+        thrust::raw_pointer_cast(_device_data->_d_py.data()),
+        thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+        thrust::raw_pointer_cast(_device_data->_d_fx.data()),
+        thrust::raw_pointer_cast(_device_data->_d_fy.data()),
+        thrust::raw_pointer_cast(_device_data->_d_fz.data()));
+
+    const auto linked_cell = LinkedCellLocator::GetInstance().GetLinkedCell();
+    const rbmd::Id logical_total = linked_cell
+        ? linked_cell->_total_atoms_num
+        : static_cast<rbmd::Id>(_device_data->_d_fx.size());
+    size_t reduce_span = static_cast<size_t>(logical_total > 0 ? logical_total : 0);
+    if (reduce_span > _device_data->_d_fx.size()) {
+      reduce_span = _device_data->_d_fx.size();
+    }
+    const rbmd::Real local_sum_x =
+        thrust::reduce(_device_data->_d_fx.begin(),
+                       _device_data->_d_fx.begin() + reduce_span,
+                       0.0f, thrust::plus<rbmd::Real>());
+    const rbmd::Real local_sum_y =
+        thrust::reduce(_device_data->_d_fy.begin(),
+                       _device_data->_d_fy.begin() + reduce_span,
+                       0.0f, thrust::plus<rbmd::Real>());
+    const rbmd::Real local_sum_z =
+        thrust::reduce(_device_data->_d_fz.begin(),
+                       _device_data->_d_fz.begin() + reduce_span,
+                       0.0f, thrust::plus<rbmd::Real>());
+    const rbmd::Id global_num_atoms = GetGlobalIdSum(num_atoms);
+    _corr_value_x = GetGlobalRealSum(local_sum_x) / global_num_atoms;
+    _corr_value_y = GetGlobalRealSum(local_sum_y) / global_num_atoms;
+    _corr_value_z = GetGlobalRealSum(local_sum_z) / global_num_atoms;
+
+    // fix RBL:   rbl_force = force - corr_value
+    op::FixRBLForceOp<device::DEVICE_GPU>()(
+                        num_atoms, _corr_value_x, _corr_value_y, _corr_value_z,
+                        thrust::raw_pointer_cast(_device_data->_d_fx.data()),
+                        thrust::raw_pointer_cast(_device_data->_d_fy.data()),
+                        thrust::raw_pointer_cast(_device_data->_d_fz.data()));
+
+  auto end_rbl_force = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<rbmd::Real> duration_rbl_force = end_rbl_force - start_rbl_force;
+  TimingStatistics::Instance().record("Short-Range",duration_rbl_force.count());
+
+    //energy
+  const auto& config = DataManager::getInstance().getConfigData();
+  if(config->PathExists({"hyper_parameters", "neighbor" ,"energy_rbl_flag"}))
+   {
+      _energy_rbl_flag = DataManager::getInstance().getConfigData()->Get<std::string>
+           ("energy_rbl_flag", "hyper_parameters", "neighbor");
+      if ("yes" == _energy_rbl_flag ) {
+         ComputeLJEnergy();
+      }
+   }
+}
+
+void LJ::ComputeLJVerlet()
+{
+  // neighbor_list_build
+  auto start = std::chrono::high_resolution_clock::now();
+  _list = _neighbor_list_builder->Build();
+  auto end = std::chrono::high_resolution_clock::now();
+
+  std::chrono::duration<rbmd::Real> duration = end - start;
+  TimingStatistics::Instance().record("Neighbor-List",duration.count());
+  //
+  auto start_verlet_force = std::chrono::high_resolution_clock::now();
+  thrust::device_vector<rbmd::Real> d_total_evdwl(1, 0.0);
+  auto num_atoms = *(_structure_info_data->_num_atoms);
+  const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
+  // compute LJ
+  op::LJForceOp<device::DEVICE_GPU>()(
+              force_box, _cut_off,num_atoms,
+              thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
+              thrust::raw_pointer_cast(_device_data->_d_sigma.data()),
+              thrust::raw_pointer_cast(_device_data->_d_eps.data()),
+              thrust::raw_pointer_cast(_list->_start_idx.data()),
+              thrust::raw_pointer_cast(_list->_end_idx.data()),
+              thrust::raw_pointer_cast(_list->_d_neighbors.data()),
+              thrust::raw_pointer_cast(_device_data->_d_px.data()),
+              thrust::raw_pointer_cast(_device_data->_d_py.data()),
+              thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+              thrust::raw_pointer_cast(_device_data->_d_fx.data()),
+              thrust::raw_pointer_cast(_device_data->_d_fy.data()),
+              thrust::raw_pointer_cast(_device_data->_d_fz.data()),
+              thrust::raw_pointer_cast(_device_data->_d_flat_virial.data()),
+              thrust::raw_pointer_cast(d_total_evdwl.data()));
+
+  auto end_verlet_force = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<rbmd::Real> duration_verlet_force = end_verlet_force - start_verlet_force;
+  TimingStatistics::Instance().record("Short-Range",duration_verlet_force.count());
+
+  // D2H
+  thrust::host_vector<rbmd::Real> h_total_evdwl(d_total_evdwl);
+  const rbmd::Real global_total_evdwl = GetGlobalRealSum(h_total_evdwl[0]);
+  const rbmd::Id global_num_atoms = GetGlobalIdSum(num_atoms);
+  _e_vdwl = global_total_evdwl / global_num_atoms;
+
+  //sum virial_lj on host
+  ReduceVirial(num_atoms,_device_data->_d_flat_virial,
+_device_data->_d_virial_lj);
+}
+
+void LJ::ComputeLJEnergy()
+{
+  // energy
+  _list = _neighbor_list_builder->Build();
+
+  thrust::device_vector<rbmd::Real> d_total_evdwl(1, 0.0);
+  auto num_atoms = *(_structure_info_data->_num_atoms);
+  const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
+  op::LJEnergyOp<device::DEVICE_GPU>()(
+                force_box, _cut_off, num_atoms,
+               thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
+               thrust::raw_pointer_cast(_device_data->_d_sigma.data()),
+               thrust::raw_pointer_cast(_device_data->_d_eps.data()),
+               thrust::raw_pointer_cast(_list->_start_idx.data()),
+               thrust::raw_pointer_cast(_list->_end_idx.data()),
+               thrust::raw_pointer_cast(_list->_d_neighbors.data()),
+               thrust::raw_pointer_cast(_device_data->_d_px.data()),
+               thrust::raw_pointer_cast(_device_data->_d_py.data()),
+               thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+               thrust::raw_pointer_cast(_device_data->_d_flat_virial.data()),
+               thrust::raw_pointer_cast(d_total_evdwl.data()));
+
+  // D2H
+  thrust::host_vector<rbmd::Real> h_total_evdwl(d_total_evdwl);
+  const rbmd::Real global_total_evdwl = GetGlobalRealSum(h_total_evdwl[0]);
+  const rbmd::Id global_num_atoms = GetGlobalIdSum(num_atoms);
+  _e_vdwl = global_total_evdwl / global_num_atoms;
+
+  //sum virial_lj on host
+  ReduceVirial(num_atoms,_device_data->_d_flat_virial,
+_device_data->_d_virial_lj);
+}
+
+void LJ::EvaluatePotentialEnergy()
+{
+  _e_pe_rbl = _e_vdwl_rbl;
+  test_e_pe_rbl = _e_pe_rbl;
+
+
+  if(1 == test_current_step)
+  {
+    _e_pe_init = _e_vdwl;
+    test_e_pe_init = _e_pe_init;
+  }
+  _e_pe = _e_vdwl;
+
+  ThermoStats::Instance().AddThermoData("total-potential-energy",_e_pe);
+
+  //out
+  auto interval = DataManager::getInstance().getConfigData()->Get<rbmd::Id>(
+"interval", "outputs", "thermo_out");
+  if (!rbmd::mpi::ShouldWriteRootOnlyOutput()) {
+    return;
+  }
+  std::ofstream outfile("thermo.txt", std::ios::app);
+  if (outfile.tellp() == 0) {
+    outfile << "step e_vdwl  e_pe" << std::endl;
+  }
+  if (test_current_step % interval == 0) {
+    outfile << test_current_step << " " << _e_vdwl  << " "<< _e_pe << std::endl;
+  }
+  outfile.close();
+}

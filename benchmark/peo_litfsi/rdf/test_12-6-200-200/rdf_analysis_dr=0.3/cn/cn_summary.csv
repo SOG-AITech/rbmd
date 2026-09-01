@@ -1,0 +1,3 @@
+tag,pair,status,frames_used,frames_total,r_cut,n_first_shell,benchmark_n,deviation,rel_deviation_percent,group_total_n,fraction_of_group,coulomb_sample_num,coulomb_type,cut_off,neighbor_sample_num,neighbor_type,r_core
+baseline,Li-O_PEO,ok,5,5,3.15,3.8801,3.8665,+0.0136,+0.35,5.4751,0.7087,200,RBE,12,200,RBL,6
+baseline,Li-O_TFSI,ok,5,5,3.45,1.5950,1.6212,-0.0261,-1.61,5.4751,0.2913,200,RBE,12,200,RBL,6

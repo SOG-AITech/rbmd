@@ -1,0 +1,16 @@
+{
+  "created": "2026-08-19",
+  "purpose": "Test whether forcing 2x1x2 removes the PEO weak first-point Short-Range elevation",
+  "original_default_grid": "MPI_Dims_create(4,3) -> 2x2x1",
+  "forced_grid": "2x1x2",
+  "original_short_plus_long_s_per_step": 0.059759,
+  "original_short_s_per_step": 0.051539,
+  "comparison_series_later_short_plus_long_range": [
+    0.055509,
+    0.056287
+  ],
+  "policy": "one causal-control case, free partition, no exclusive",
+  "source_json": "/public/home/acymkxdx47/rbmd/build/runpeo/weak/weak-100w_per_gpu-0811/4/test.json",
+  "source_sha256": "3a23c025826b842e521497ba0e40243747a3dda97a7fec8bbbc3ba275a61a1c3",
+  "rbmd_sha256": "33d1616445a2b7d911bb1709da7bd4122afde9de917d4f6ede14cb02219cb75f"
+}

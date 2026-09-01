@@ -1,0 +1,781 @@
+#include "../common/rbmd_define.h"
+#include "../lj_op/rocm/lj_op.hip.cu"
+#include "lj_cut_coul_kspace_op.h"
+#include "model/box.h"
+
+namespace op {
+
+  //---------device---------//
+  // CoulForce
+  inline __device__ void CoulCutForce_fix(
+                rbmd::Real cut_off,
+                rbmd::Real alpha,
+                rbmd::Real qqr2e,
+                rbmd::Real charge_i,
+                rbmd::Real charge_j,
+                rbmd::Real px12,
+                rbmd::Real py12,
+                rbmd::Real pz12,
+                rbmd::Real& force_coul_factor,
+                rbmd::Real& energy_coul_factor,
+                rbmd::Real& force_coul,
+                rbmd::Real& energy_coul)
+  {
+    const rbmd::Real dis_2 = px12 * px12 + py12 * py12 + pz12 * pz12;
+    const rbmd::Real dis = SQRT(dis_2);
+    const rbmd::Real dis_3 = POW(dis,3.0);
+    const rbmd::Real cut_off_2 = cut_off * cut_off;
+
+    //if (dis_2 < cut_off_2 && dis_2 > EPSILON)
+    if (dis_2 < cut_off_2)
+    {
+      rbmd::Real erfcx = SQRT(alpha) * dis;
+      rbmd::Real expx = -alpha * dis_2;
+      rbmd::Real erfc_value = ERFC(erfcx);
+
+      rbmd::Real gnear_value = (erfc_value) / dis_2 +
+              2 * SQRT(alpha) * EXP(expx) / (SQRT(M_PI) * dis);
+
+      force_coul_factor =  -qqr2e * charge_i * charge_j / dis_3;//+
+      force_coul =  -qqr2e * charge_i * charge_j * gnear_value / dis;//+
+
+      energy_coul_factor  = 0.5 * qqr2e * charge_i * charge_j / dis;
+      energy_coul = qqr2e * (0.5 * charge_i * charge_j * (erfc_value) / dis);
+    }
+    else
+    {
+      force_coul_factor = 0.0;
+      force_coul  = 0.0;
+      energy_coul_factor = 0.0;
+      energy_coul = 0.0;
+    }
+  }
+
+inline __device__ void LJ126CoulCutForce_fix(
+              rbmd::Real cut_off,
+              rbmd::Real eps_ij, rbmd::Real sigma_ij,
+              rbmd::Real alpha,
+              rbmd::Real qqr2e,
+              rbmd::Real charge_i,
+              rbmd::Real charge_j,
+              rbmd::Real px12,
+              rbmd::Real py12,
+              rbmd::Real pz12,
+              rbmd::Real& force_lj,
+              rbmd::Real& energy_lj,
+              rbmd::Real& force_coul_factor,
+              rbmd::Real& energy_coul_factor,
+              rbmd::Real& force_coul,
+              rbmd::Real& energy_coul)
+  {
+    const rbmd::Real dis_2 = px12 * px12 + py12 * py12 + pz12 * pz12;
+    const rbmd::Real dis = SQRT(dis_2);
+    const rbmd::Real dis_3 = POW(dis,3.0);
+    const rbmd::Real cut_off_2 = cut_off * cut_off;
+
+    //if (dis_2 < cut_off_2 && dis_2 > EPSILON)
+    if (dis_2 < cut_off_2)
+    {
+      rbmd::Real sigmaij_6 = POW(sigma_ij, 6.0);
+      rbmd::Real dis_6 = POW(dis_2, 3.0);
+      rbmd::Real sigmaij_dis_6 = sigmaij_6 / dis_6;
+      force_lj = -24 * eps_ij * ((2 * sigmaij_dis_6 - 1) * sigmaij_dis_6) / dis_2;//+
+      energy_lj =
+          0.5 * (4 * eps_ij * (sigmaij_6 / dis_6 - 1) * sigmaij_dis_6);
+      //
+      rbmd::Real erfcx = SQRT(alpha) * dis;
+      rbmd::Real expx = -alpha * dis_2;
+      rbmd::Real gnear_value = (1.0 - ERF(erfcx)) / dis_2 +
+              2 * SQRT(alpha) * EXP(expx) / (SQRT(M_PI) * dis);
+
+      force_coul_factor =  -qqr2e * charge_i * charge_j / dis_3;//+
+      force_coul =  -qqr2e * charge_i * charge_j * gnear_value / dis;//+
+
+      energy_coul_factor  = 0.5 * qqr2e * charge_i * charge_j / dis;
+      energy_coul = qqr2e * (0.5 * charge_i * charge_j * (1.0 - ERF(SQRT(alpha) * dis)) / dis);
+    }
+    else
+    {
+      force_lj = 0.0;
+      energy_lj= 0.0;
+      force_coul_factor = 0.0;
+      force_coul  = 0.0;
+      energy_coul_factor = 0.0;
+      energy_coul = 0.0;
+    }
+  }
+
+inline __device__ void CoulCutForce(rbmd::Real cut_off, rbmd::Real alpha,
+                                  rbmd::Real qqr2e,
+                                  rbmd::Real charge_i, rbmd::Real charge_j,
+                                  rbmd::Real px12, rbmd::Real py12,
+                                  rbmd::Real pz12, rbmd::Real& force_coul,
+                                  rbmd::Real& energy_coul) {
+    const rbmd::Real dis_2 = px12 * px12 + py12 * py12 + pz12 * pz12;
+    const rbmd::Real dis = SQRT(dis_2);
+    const rbmd::Real cut_off_2 = cut_off * cut_off;
+
+    if (dis_2 < cut_off_2) {
+      rbmd::Real erfcx = SQRT(alpha) * dis;
+      rbmd::Real expx = -alpha * dis_2;
+      rbmd::Real erfc_value = ERFC(erfcx);
+
+      rbmd::Real gnear_value = (erfc_value) / dis_2 +
+              2 * SQRT(alpha) * EXP(expx) / (SQRT(M_PI) * dis);
+      force_coul = - qqr2e * charge_i * charge_j * gnear_value / dis ;
+      energy_coul = qqr2e * (0.5 * charge_i * charge_j *
+                       (erfc_value) / dis);
+    } else {
+      force_coul = 0.0;
+      energy_coul = 0.0;
+    }
+  }
+
+  inline __device__ void CoulCutForce_rs_fix(
+  rbmd::Real rs,
+  rbmd::Real alpha,
+  rbmd::Real qqr2e,
+  rbmd::Real charge_i,
+  rbmd::Real charge_j,
+  rbmd::Real px12,
+  rbmd::Real py12,
+  rbmd::Real pz12,
+  rbmd::Real& coul_force_factor,
+  rbmd::Real& force_coul)
+  {
+    const rbmd::Real dis_2 = px12 * px12 + py12 * py12 + pz12 * pz12;
+    const rbmd::Real dis = SQRT(dis_2);
+    const rbmd::Real dis_3 = POW(dis,3.0);
+    const rbmd::Real rs_2 = rs * rs;
+
+    if (dis_2 < rs_2 && dis_2 > EPSILON)
+    {
+      rbmd::Real erfcx = SQRT(alpha) * dis;
+      rbmd::Real expx = -alpha * dis_2;
+      rbmd::Real gnear_value = (1.0 - ERF(erfcx)) / dis_2 +
+              2 * SQRT(alpha) * EXP(expx) / (SQRT(M_PI) * dis);
+      coul_force_factor = - qqr2e * charge_i * charge_j / dis_3;
+      force_coul = - qqr2e * charge_i * charge_j * gnear_value / dis ;
+    }
+    else force_coul = 0.0;
+  }
+
+  inline __device__ void CoulCutForce_rcs_fix(
+        rbmd::Real rc,
+        rbmd::Real rs,
+        rbmd::Id  pice_num,
+        rbmd::Real alpha,
+        rbmd::Real qqr2e,
+        rbmd::Real charge_i,
+        rbmd::Real charge_j,
+        rbmd::Real px12,
+        rbmd::Real py12,
+        rbmd::Real pz12,
+        rbmd::Real& coul_force_factor,
+        rbmd::Real& force_coul)
+  {
+    const rbmd::Real dis_2 = px12 * px12 + py12 * py12 + pz12 * pz12;
+    const rbmd::Real dis = SQRT(dis_2);
+    const rbmd::Real dis_3 = POW(dis,3.0);
+    const rbmd::Real rc_2 = rc * rc;
+    const rbmd::Real rs_2 = rs * rs;
+
+    if (dis_2 < rc_2 && dis_2 > rs_2)
+    {
+      rbmd::Real erfcx = SQRT(alpha) * dis;
+      rbmd::Real expx = -alpha * dis_2;
+      rbmd::Real gnear_value = (1.0 - ERF(erfcx)) / dis_2 +
+              2 * SQRT(alpha) * EXP(expx) / (SQRT(M_PI) * dis);
+      coul_force_factor = - qqr2e * charge_i * charge_j / dis_3;
+      force_coul = -pice_num* qqr2e * charge_i * charge_j *
+        gnear_value / dis ;
+    }
+    else force_coul = 0.0;
+
+  }
+inline __device__ void CoulCutForceUser(
+     const  rbmd::Real cut_off, const rbmd::Real px12, const rbmd::Real py12,const rbmd::Real pz12,
+     const rbmd::Real qqr2e, const rbmd::Real charge_i, const rbmd::Real charge_j,
+     const rbmd::Real taylor_coeff0,const rbmd::Real taylor_coeff1,const rbmd::Real taylor_coeff2,
+     const rbmd::Real taylor_coeff3,const rbmd::Real taylor_coeff4,const rbmd::Real taylor_coeff5,
+     const rbmd::Real sigma, const rbmd::Real b, const rbmd::Id m_max, const rbmd::Real w0,
+    rbmd::Real& force_coul_full, rbmd::Real& energy_coul_full,
+    rbmd::Real& force_coul_short, rbmd::Real& energy_coul_short)
+{
+    const rbmd::Real dis_2 = px12 * px12 + py12 * py12 + pz12 * pz12;
+    const rbmd::Real  r2inv = 1.0 / dis_2;
+    const rbmd::Real cut_off_2 = cut_off * cut_off;
+    if (dis_2 < cut_off_2) {
+
+      rbmd::Real rinv = SQRT(r2inv);
+      rbmd::Real  r3inv = rinv * r2inv;
+      rbmd::Real prefactor = qqr2e * charge_i * charge_j;
+
+      // --- 1. Full Coulomb  ---
+      force_coul_full = -prefactor * r3inv;
+      energy_coul_full = 0.5* prefactor * rinv;
+
+      // --- 2. SOG Short-Range Force (Taylor Expansion) ---
+      rbmd::Real poly = taylor_coeff0
+                      + taylor_coeff1 * dis_2
+                      + taylor_coeff2 * POW(dis_2,2.0)
+                      + taylor_coeff3 * POW(dis_2,3.0)
+                      + taylor_coeff4 * POW(dis_2,4.0)
+                      + taylor_coeff5 * POW(dis_2,5.0);
+
+      force_coul_short = -prefactor * (r3inv + poly);
+
+      // --- 3. SOG Short-Range Energy (Gaussian Sum Loop) ---
+      // ecoul = prefactor * (rinv - sume)
+      rbmd::Real sume = 0.0;
+      rbmd::Real two_sigma2 = 2.0 * sigma * sigma;
+      rbmd::Real norm_factor = 2.0 * LOG(b) / SQRT(2.0 * M_PI * sigma * sigma);
+
+      // l = 0 term
+      sume += norm_factor * w0 * EXP(-dis_2 / two_sigma2);
+
+      // l > 0 terms
+      for (int l = 1; l < m_max; l++) {
+        sume += norm_factor *(1.0 / POW(b, l + 0.00)) *
+          EXP(-dis_2 / (2 * sigma * sigma * POW(b, l + 0.00) * POW(b, l + 0.00)));
+      }
+
+      energy_coul_short = 0.5* prefactor * (rinv - sume);
+    }
+    else {
+      force_coul_full = 0.0;
+      energy_coul_full = 0.0;
+      force_coul_short = 0.0;
+      energy_coul_short =0.0;
+    }
+
+}
+
+  //------global---------//
+  // verlet-list: LJCoulCutForce
+  __global__ void ComputeLJCutCoulForce(
+       Box box, const rbmd::Real cut_off,
+      const rbmd::Id num_atoms, const rbmd::Real alpha, const rbmd::Real qqr2e,
+      const rbmd::Id* atoms_type, const rbmd::Real* sigma, const rbmd::Real* eps,
+      const rbmd::Id* start_id, const rbmd::Id* end_id,
+      const rbmd::Id* id_verletlist, const rbmd::Real* charge,
+      const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
+      rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,rbmd::Real* flat_virial,
+      rbmd::Real* total_evdwl,rbmd::Real* total_ecoul) {
+    __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
+        temp_storage_elj;
+    __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
+        temp_storage_ecoul;
+    rbmd::Real sum_fx = 0;
+    rbmd::Real sum_fy = 0;
+    rbmd::Real sum_fz = 0;
+    rbmd::Real sum_elj = 0;
+    rbmd::Real sum_ecoul = 0;
+    //virial init
+    rbmd::Real sum_virial[6];
+    for (int i = 0; i < 6; ++i)
+    {
+      sum_virial[i] = 0.0;
+    }
+
+    unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid1 < num_atoms) {
+      rbmd::Id typei = atoms_type[tid1];
+      rbmd::Real eps_i = eps[typei];
+      rbmd::Real sigma_i = sigma[typei];
+      rbmd::Real charge_i = charge[tid1];
+      rbmd::Real x1 = px[tid1];
+      rbmd::Real y1 = py[tid1];
+      rbmd::Real z1 = pz[tid1];
+
+      for (int j = start_id[tid1]; j < end_id[tid1]; ++j) {
+        rbmd::Id tid2 = id_verletlist[j];
+        rbmd::Id typej = atoms_type[tid2];
+        rbmd::Real eps_j = eps[typej];
+        rbmd::Real sigma_j = sigma[typej];
+        rbmd::Real charge_j = charge[tid2];
+        // mix
+        rbmd::Real eps_ij = SQRT(eps_i * eps_j);
+        rbmd::Real sigma_ij = (sigma_i + sigma_j) / 2;
+        rbmd::Real x2 = px[tid2];
+        rbmd::Real y2 = py[tid2];
+        rbmd::Real z2 = pz[tid2];
+        rbmd::Real px12 = x2 - x1;
+        rbmd::Real py12 = y2 - y1;
+        rbmd::Real pz12 = z2 - z1;
+        MinImageDistance(box, px12, py12, pz12);
+        rbmd::Real force_lj, force_coul, force_pair;
+        rbmd::Real energy_lj, energy_coul;
+        // lj cut
+        lj126(cut_off, px12, py12, pz12, eps_ij, sigma_ij, force_lj, energy_lj);
+
+        // Coul cut
+        CoulCutForce(cut_off, alpha, qqr2e,charge_i, charge_j,
+                         px12, py12, pz12, force_coul, energy_coul);
+
+        force_pair = force_lj + force_coul;
+        sum_fx += force_pair * px12;
+        sum_fy += force_pair * py12;
+        sum_fz += force_pair * pz12;
+        sum_elj += energy_lj;
+        sum_ecoul += energy_coul;
+
+        rbmd::Real local_virial_xx,local_virial_yy,local_virial_zz,
+    local_virial_xy,local_virial_xz,local_virial_yz;
+        ComputeVirial(px12, py12, pz12,force_pair,local_virial_xx,local_virial_yy,
+  local_virial_zz,local_virial_xy,local_virial_xz,local_virial_yz);
+        sum_virial[0] +=local_virial_xx;
+        sum_virial[1] +=local_virial_yy;
+        sum_virial[2] +=local_virial_zz;
+        sum_virial[3] +=local_virial_xy;
+        sum_virial[4] +=local_virial_xz;
+        sum_virial[5] +=local_virial_yz;
+      }
+
+      fx[tid1] = sum_fx;
+      fy[tid1] = sum_fy;
+      fz[tid1] = sum_fz;
+      //
+      for(int i =0;i<6;++i) {
+        flat_virial[ i * num_atoms + tid1 ] = sum_virial[i];
+      }
+    }
+
+    rbmd::Real block_sum_elj =
+        BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage_elj)
+            .Sum(sum_elj);
+    rbmd::Real block_sum_ecoul =
+        BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage_ecoul)
+            .Sum(sum_ecoul);
+
+    if (threadIdx.x == 0) {
+      atomicAdd(total_evdwl, block_sum_elj);
+      atomicAdd(total_ecoul, block_sum_ecoul);
+    }
+  }
+
+__global__ void ComputeLJCutCoulForceUserKernel(
+  Box box, const rbmd::Real cut_off, const rbmd::Id num_atoms,const  rbmd::Real qqr2e,
+   const rbmd::Real rbsog_sigma,const rbmd::Real rbsog_b, const rbmd::Id rbsog_mmax,
+   const rbmd::Real rbsog_w0,const rbmd::Real* taylor_coeff,
+   const rbmd::Id* atoms_type,
+   const rbmd::Real* sigma, const rbmd::Real* eps,
+   const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
+   const rbmd::Real* charge, const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
+   rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
+   rbmd::Real* flat_virial, rbmd::Real* total_evdwl, rbmd::Real* total_ecoul)
+{
+    __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage temp_storage_elj;
+    __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage temp_storage_ecoul;
+    rbmd::Real sum_fx = 0;
+    rbmd::Real sum_fy = 0;
+    rbmd::Real sum_fz = 0;
+    rbmd::Real sum_elj = 0;
+    rbmd::Real sum_ecoul = 0;
+    //virial init
+    rbmd::Real sum_virial[6];
+    for (int i = 0; i < 6; ++i)
+    {
+      sum_virial[i] = 0.0;
+    }
+
+    unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid1 < num_atoms) {
+      rbmd::Id typei = atoms_type[tid1];
+      rbmd::Real eps_i = eps[typei];
+      rbmd::Real sigma_i = sigma[typei];
+      rbmd::Real charge_i = charge[tid1];
+      rbmd::Real x1 = px[tid1];
+      rbmd::Real y1 = py[tid1];
+      rbmd::Real z1 = pz[tid1];
+
+      for (int j = start_id[tid1]; j < end_id[tid1]; ++j) {
+        rbmd::Id tid2 = id_verletlist[j];
+        rbmd::Id typej = atoms_type[tid2];
+        rbmd::Real eps_j = eps[typej];
+        rbmd::Real sigma_j = sigma[typej];
+        rbmd::Real charge_j = charge[tid2];
+        // mix
+        rbmd::Real eps_ij = SQRT(eps_i * eps_j);
+        rbmd::Real sigma_ij = (sigma_i + sigma_j) / 2;
+        rbmd::Real x2 = px[tid2];
+        rbmd::Real y2 = py[tid2];
+        rbmd::Real z2 = pz[tid2];
+        rbmd::Real x12 = x2 - x1;
+        rbmd::Real y12 = y2 - y1;
+        rbmd::Real z12 = z2 - z1;
+        // rbmd::Real x12 = x1 - x2;
+        // rbmd::Real y12 = y1 - y2;
+        // rbmd::Real z12 = z1 - z2;
+        MinImageDistance_while(box, x12, y12, z12);
+
+
+        rbmd::Real force_lj, force_pair;
+        rbmd::Real energy_lj;
+          // lj cut
+        lj126(cut_off, x12, y12, z12, eps_ij, sigma_ij,
+          force_lj, energy_lj);
+
+          // --- . Coul Calculation (RBSOG) ---
+        rbmd::Real f_coul_full, e_coul_full, f_coul_short, e_coul_short;
+        CoulCutForceUser(cut_off, x12, y12,z12, qqr2e, charge_i, charge_j,
+                           taylor_coeff[0], taylor_coeff[1],
+                           taylor_coeff[2],taylor_coeff[3],
+                           taylor_coeff[4], taylor_coeff[5],
+                           rbsog_sigma, rbsog_b, rbsog_mmax, rbsog_w0,
+                           f_coul_full, e_coul_full,
+                           f_coul_short, e_coul_short);
+
+        force_pair = force_lj  + f_coul_short;
+        // printf("force_pair:  %f\n",force_pair);
+
+         sum_fx += x12 * force_pair;
+         sum_fy += y12 * force_pair;
+         sum_fz += z12 * force_pair;
+
+         sum_elj +=  energy_lj;
+         sum_ecoul += e_coul_short;
+
+         // --- . Virial ---
+        //rbmd::Real local_virial[6];
+        rbmd::Real local_virial_xx,local_virial_yy,local_virial_zz,
+          local_virial_xy,local_virial_xz,local_virial_yz;
+        ComputeVirial(x12, y12, z12,force_pair,
+          local_virial_xx,local_virial_yy,local_virial_zz,
+          local_virial_xy,local_virial_xz,local_virial_yz);
+
+        //
+        sum_virial[0] +=local_virial_xx;
+        sum_virial[1] +=local_virial_yy;
+        sum_virial[2] +=local_virial_zz;
+        sum_virial[3] +=local_virial_xy;
+        sum_virial[4] +=local_virial_xz;
+        sum_virial[5] +=local_virial_yz;
+
+      }
+
+      fx[tid1] = sum_fx;
+      fy[tid1] = sum_fy;
+      fz[tid1] = sum_fz;
+      //
+      for(int i =0;i<6;++i) {
+        flat_virial[  i * num_atoms + tid1] = sum_virial[i];
+      }
+    }
+
+    rbmd::Real b_sum_elj = BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage_elj).Sum(sum_elj);
+    rbmd::Real b_sum_ecoul = BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage_ecoul).Sum(sum_ecoul);
+    if (threadIdx.x == 0) {
+        atomicAdd(total_evdwl, b_sum_elj);
+        atomicAdd(total_ecoul, b_sum_ecoul);
+    }
+}
+
+  // verlet-list: LJCutCoul Energy
+  __global__ void ComputeLJCutCoulEnergy(
+       Box box, const rbmd::Real cut_off,
+      const rbmd::Id num_atoms, const rbmd::Real alpha, const rbmd::Real qqr2e,
+      const rbmd::Id* atoms_type, const rbmd::Real* sigma, const rbmd::Real* eps,
+      const rbmd::Id* start_id, const rbmd::Id* end_id,
+      const rbmd::Id* id_verletlist, const rbmd::Real* charge,
+      const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
+      rbmd::Real* flat_virial,rbmd::Real* total_evdwl, rbmd::Real* total_ecoul) {
+    __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
+        temp_storage_elj;
+    __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
+        temp_storage_ecoul;
+
+    rbmd::Real sum_elj = 0;
+    rbmd::Real sum_ecoul = 0;
+    //virial init
+    rbmd::Real sum_virial[6];
+    for (int i = 0; i < 6; ++i)
+    {
+      sum_virial[i] = 0.0;
+    }
+
+    unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid1 < num_atoms) {
+      rbmd::Id typei = atoms_type[tid1];
+      rbmd::Real eps_i = eps[typei];
+      rbmd::Real sigma_i = sigma[typei];
+      rbmd::Real charge_i = charge[tid1];
+      rbmd::Real x1 = px[tid1];
+      rbmd::Real y1 = py[tid1];
+      rbmd::Real z1 = pz[tid1];
+
+      for (int j = start_id[tid1]; j < end_id[tid1]; ++j) {
+        rbmd::Id tid2 = id_verletlist[j];
+        rbmd::Id typej = atoms_type[tid2];
+        rbmd::Real eps_j = eps[typej];
+        rbmd::Real sigma_j = sigma[typej];
+        rbmd::Real charge_j = charge[tid2];
+        // mix
+        rbmd::Real eps_ij = SQRT(eps_i * eps_j);
+        rbmd::Real sigma_ij = (sigma_i + sigma_j) / 2;
+        rbmd::Real x2 = px[tid2];
+        rbmd::Real y2 = py[tid2];
+        rbmd::Real z2 = pz[tid2];
+        rbmd::Real px12 = x2 - x1;
+        rbmd::Real py12 = y2 - y1;
+        rbmd::Real pz12 = z2 - z1;
+        MinImageDistance(box, px12, py12, pz12);
+        rbmd::Real force_lj, force_coul;
+        rbmd::Real energy_lj, energy_coul;
+        // lj cut
+        lj126(cut_off, px12, py12, pz12, eps_ij, sigma_ij, force_lj, energy_lj);
+
+        // Coul cut
+        CoulCutForce(cut_off, alpha, qqr2e, charge_i, charge_j,
+                     px12, py12, pz12, force_coul, energy_coul);
+
+        sum_elj += energy_lj;
+        sum_ecoul += energy_coul;
+
+        rbmd::Real force_pair =  force_lj+force_coul;
+        rbmd::Real local_virial_xx,local_virial_yy,local_virial_zz,
+    local_virial_xy,local_virial_xz,local_virial_yz;
+        ComputeVirial(px12, py12, pz12,force_pair,local_virial_xx,local_virial_yy,
+      local_virial_zz,local_virial_xy,local_virial_xz,local_virial_yz);
+
+        //
+        sum_virial[0] +=local_virial_xx;
+        sum_virial[1] +=local_virial_yy;
+        sum_virial[2] +=local_virial_zz;
+        sum_virial[3] +=local_virial_xy;
+        sum_virial[4] +=local_virial_xz;
+        sum_virial[5] +=local_virial_yz;
+      }
+      //
+      for(int i =0;i<6;++i) {
+        flat_virial[ i * num_atoms + tid1 ] = sum_virial[i];
+      }
+    }
+    rbmd::Real block_sum_elj =
+        BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage_elj)
+            .Sum(sum_elj);
+    rbmd::Real block_sum_ecoul =
+        BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage_ecoul)
+            .Sum(sum_ecoul);
+
+    if (threadIdx.x == 0) {
+      atomicAdd(total_evdwl, block_sum_elj);
+      atomicAdd(total_ecoul, block_sum_ecoul);
+    }
+  }
+
+
+  // RBL: LJCutCoul
+  __global__ void ComputeLJCutCoulRBLForce(
+       Box box, const rbmd::Real rs, const rbmd::Real rc,
+      const rbmd::Id num_atoms, const rbmd::Id neighbor_sample_num,
+      const rbmd::Id pice_num, const rbmd::Real alpha, const rbmd::Real qqr2e,
+      const rbmd::Id* atoms_type, const rbmd::Real* sigma, const rbmd::Real* eps,
+      const rbmd::Id* start_id, const rbmd::Id* end_id,
+      const rbmd::Id* id_verletlist, const rbmd::Id* id_random_neighbor,
+      const rbmd::Id* random_neighbor_num, const rbmd::Real* charge,
+      const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
+      rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz) {
+    rbmd::Real sum_fx = 0;
+    rbmd::Real sum_fy = 0;
+    rbmd::Real sum_fz = 0;
+    rbmd::Real sum_fsx = 0;
+    rbmd::Real sum_fsy = 0;
+    rbmd::Real sum_fsz = 0;
+    rbmd::Real sum_fcsx = 0;
+    rbmd::Real sum_fcsy = 0;
+    rbmd::Real sum_fcsz = 0;
+
+    unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid1 < num_atoms) {
+      rbmd::Id typei = atoms_type[tid1];
+      rbmd::Real eps_i = eps[typei];
+      rbmd::Real sigma_i = sigma[typei];
+      rbmd::Real charge_i = charge[tid1];
+
+      rbmd::Real x1 = px[tid1];
+      rbmd::Real y1 = py[tid1];
+      rbmd::Real z1 = pz[tid1];
+      // rs
+      for (rbmd::Id j = start_id[tid1]; j < end_id[tid1]; ++j) {
+        rbmd::Id tid2 = id_verletlist[j];
+        rbmd::Id typej = atoms_type[tid2];
+        rbmd::Real eps_j = eps[typej];
+        rbmd::Real sigma_j = sigma[typej];
+        rbmd::Real charge_j = charge[tid2];
+
+        // mix
+        rbmd::Real eps_ij = SQRT(eps_i * eps_j);
+        rbmd::Real sigma_ij = (sigma_i + sigma_j) / 2;
+        rbmd::Real x2 = px[tid2];
+        rbmd::Real y2 = py[tid2];
+        rbmd::Real z2 = pz[tid2];
+        rbmd::Real px12 = x2 - x1;
+        rbmd::Real py12 = y2 - y1;
+        rbmd::Real pz12 = z2 - z1;
+        MinImageDistance(box, px12, py12, pz12);
+
+        // compute the force_rs
+        rbmd::Real force_lj_rs, force_coul_rs, force_coul_factor_rs;
+        rbmd::Real fs_ij;
+
+        lj126_rs(rs, px12, py12, pz12, eps_ij, sigma_ij, force_lj_rs);
+        CoulCutForce_rs_fix(rs, alpha, qqr2e, charge_i, charge_j, px12,
+                            py12, pz12, force_coul_factor_rs, force_coul_rs);
+
+        fs_ij = force_lj_rs + force_coul_rs;
+        sum_fsx += fs_ij * px12;
+        sum_fsy += fs_ij * py12;
+        sum_fsz += fs_ij * pz12;
+      }
+
+      // rcs
+      rbmd::Id real_random_num = random_neighbor_num[tid1];
+      for (rbmd::Id jj = 0; jj < real_random_num; ++jj) {
+        const unsigned long random_neighbor_index =
+            static_cast<unsigned long>(jj) *
+                static_cast<unsigned long>(num_atoms) +
+            static_cast<unsigned long>(tid1);
+        rbmd::Id tid2 = id_random_neighbor[random_neighbor_index];
+        rbmd::Id typej = atoms_type[tid2];
+        rbmd::Real eps_j = eps[typej];
+        rbmd::Real sigma_j = sigma[typej];
+        rbmd::Real charge_j = charge[tid2];
+
+        // mix
+        rbmd::Real eps_ij = SQRT(eps_i * eps_j);
+        rbmd::Real sigma_ij = (sigma_i + sigma_j) / 2;
+        rbmd::Real x2 = px[tid2];
+        rbmd::Real y2 = py[tid2];
+        rbmd::Real z2 = pz[tid2];
+        rbmd::Real px12 = x2 - x1;
+        rbmd::Real py12 = y2 - y1;
+        rbmd::Real pz12 = z2 - z1;
+        MinImageDistance(box, px12, py12, pz12);
+
+        // compute the force_rcs
+        rbmd::Real force_lj_rcs, force_coul_rcs, force_coul_factor_rcs;
+        rbmd::Real fcs_ij;
+
+        lj126_rcs(rc, rs, pice_num, px12, py12, pz12, eps_ij, sigma_ij,
+                  force_lj_rcs);
+
+        CoulCutForce_rcs_fix(rc, rs, pice_num, alpha, qqr2e, charge_i,
+                             charge_j, px12, py12, pz12, force_coul_factor_rcs,
+                             force_coul_rcs);
+        fcs_ij = force_lj_rcs + force_coul_rcs;
+
+        sum_fcsx += fcs_ij * px12;
+        sum_fcsy += fcs_ij * py12;
+        sum_fcsz += fcs_ij * pz12;
+      }
+
+      // total force = fs + fcs
+      sum_fx = sum_fsx + sum_fcsx;
+      sum_fy = sum_fsy + sum_fcsy;
+      sum_fz = sum_fsz + sum_fcsz;
+
+      fx[tid1] = sum_fx;
+      fy[tid1] = sum_fy;
+      fz[tid1] = sum_fz;
+    }
+  }
+
+
+  __global__ void AddForce(const rbmd::Id num_atoms, const rbmd::Real* input_fx,
+                           const rbmd::Real* input_fy, const rbmd::Real* input_fz,
+                           rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz) {
+    unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid1 < num_atoms) {
+      fx[tid1] = fx[tid1] + input_fx[tid1];
+      fy[tid1] = fy[tid1] + input_fy[tid1];
+      fz[tid1] = fz[tid1] + input_fz[tid1];
+    }
+  }
+
+  /////////////////////
+  // verlet-list: LJCutCoulForce
+  void LJCutCoulForceOp<device::DEVICE_GPU>::operator()(
+       Box box, const rbmd::Real cut_off,
+      const rbmd::Id num_atoms, const rbmd::Real alpha, const rbmd::Real qqr2e,
+      const rbmd::Id* atoms_type, const rbmd::Real* sigma, const rbmd::Real* eps,
+      const rbmd::Id* start_id, const rbmd::Id* end_id,
+      const rbmd::Id* id_verletlist, const rbmd::Real* charge,
+      const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
+      rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz, rbmd::Real* flat_virial,
+      rbmd::Real* total_evdwl,rbmd::Real* total_ecoul) {
+    unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    CHECK_KERNEL(ComputeLJCutCoulForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+        box, cut_off, num_atoms, alpha, qqr2e, atoms_type, sigma, eps,
+        start_id, end_id, id_verletlist, charge, px, py, pz, fx, fy, fz,
+        flat_virial,total_evdwl ,total_ecoul));
+  }
+
+  void LJCutCoulForceUserOp<device::DEVICE_GPU>::operator()(
+  Box box, const rbmd::Real cut_off, const rbmd::Id num_atoms,const  rbmd::Real qqr2e,
+   const rbmd::Real rbsog_sigma,const rbmd::Real rbsog_b, const rbmd::Id rbsog_mmax,
+   const rbmd::Real rbsog_w0,const rbmd::Real* taylor_coeff,
+   const rbmd::Id* atoms_type,
+   const rbmd::Real* sigma, const rbmd::Real* eps,
+   const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
+   const rbmd::Real* charge, const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
+   rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
+   rbmd::Real* flat_virial, rbmd::Real* total_evdwl, rbmd::Real* total_ecoul) {
+      unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+      CHECK_KERNEL(ComputeLJCutCoulForceUserKernel<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+          box, cut_off, num_atoms, qqr2e, rbsog_sigma,rbsog_b,rbsog_mmax,rbsog_w0,
+          taylor_coeff,atoms_type, sigma, eps,start_id, end_id, id_verletlist, charge,
+          px, py, pz, fx, fy, fz,flat_virial,total_evdwl ,total_ecoul));
+    }
+
+  // RBL:  LJCutCoul
+  void LJCutCoulRBLForceOp<device::DEVICE_GPU>::operator()(
+       Box box, const rbmd::Real rs, const rbmd::Real rc,
+      const rbmd::Id num_atoms, const rbmd::Id neighbor_sample_num,
+      const rbmd::Id pice_num, const rbmd::Real alpha, const rbmd::Real qqr2e,
+      const rbmd::Id* atoms_type, const rbmd::Real* sigma, const rbmd::Real* eps,
+      const rbmd::Id* start_id, const rbmd::Id* end_id,
+      const rbmd::Id* id_verletlist, const rbmd::Id* id_random_neighbor,
+      const rbmd::Id* random_neighbor_num, const rbmd::Real* charge,
+      const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
+      rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz) {
+    unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    CHECK_KERNEL(ComputeLJCutCoulRBLForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+        box, rs, rc, num_atoms, neighbor_sample_num, pice_num, alpha,
+        qqr2e, atoms_type, sigma, eps, start_id, end_id, id_verletlist,
+        id_random_neighbor, random_neighbor_num, charge, px, py, pz, fx, fy, fz));
+  }
+
+  // verlet-list: LJCutCoul energ
+  void LJCutCoulEnergyOp<device::DEVICE_GPU>::operator()(
+       Box box, const rbmd::Real cut_off,
+      const rbmd::Id num_atoms, const rbmd::Real alpha, const rbmd::Real qqr2e,
+      const rbmd::Id* atoms_type, const rbmd::Real* sigma, const rbmd::Real* eps,
+      const rbmd::Id* start_id, const rbmd::Id* end_id,
+      const rbmd::Id* id_verletlist, const rbmd::Real* charge,
+      const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
+      rbmd::Real*  flat_virial,rbmd::Real* total_evdwl, rbmd::Real* total_ecoul) {
+    unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    CHECK_KERNEL(ComputeLJCutCoulEnergy<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+        box, cut_off, num_atoms, alpha, qqr2e, atoms_type, sigma, eps,
+        start_id, end_id, id_verletlist, charge, px, py, pz, flat_virial,total_evdwl,
+        total_ecoul));
+  }
+
+  void AddForceOp<device::DEVICE_GPU>::operator()(const rbmd::Id num_atoms,
+                                                  const rbmd::Real* input_fx,
+                                                  const rbmd::Real* input_fy,
+                                                  const rbmd::Real* input_fz,
+                                                  rbmd::Real* fx, rbmd::Real* fy,
+                                                  rbmd::Real* fz) {
+    unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    CHECK_KERNEL(AddForce <<<blocks_per_grid, BLOCK_SIZE, 0, 0 >>>
+                    (num_atoms, input_fx, input_fy, input_fz, fx, fy, fz));
+          }
+
+}

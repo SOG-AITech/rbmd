@@ -1,0 +1,87 @@
+{
+  "init_configuration": {
+
+    "read_data": {
+      "file":"/public/home/acymkxdx47/RBMD2/benchmark/data/peo_litfsi.data",
+      "unit": "REAL", 
+      "boundary": "p p p",
+      "atom_style": "full",   //支持atomic，charge,full
+      "velocity_type": "GAUSS"
+    }
+
+    //"inbuild": {
+    //  "dims": [ 10, 10, 10 ],
+    //  "x_range": [ 0.0, 10 ],
+    //  "y_range": [ 0.0, 10 ],
+    //  "z_range": [ 0.0, 10 ],
+    //  "velocity_type": "GAUSS",
+    //  "unit": "LJ"
+    //}
+  },
+
+  "hyper_parameters": {
+    "force_field": {
+      "type": "CVFF",
+	   //"potential_file": "/path/to/"
+	  "bond_type": "harmonic",
+	  "angle_type": "harmonic",
+	  "dihedral_type": "opls",
+	  "improper_type": "cvff"
+    },
+
+    "neighbor": {
+      "type": "{{NEIGHBOR_TYPE}}", //RBL,VERLETLIST
+      "cut_off": {{CUTOFF}},
+      "r_core": {{RCORE}},
+      "neighbor_sample_num": {{NSN}},
+	 "energy_rbl_flag": "no"
+    },
+
+    "coulomb": {
+    "type": "{{COULOMB_TYPE}}", //  RBE,EWALD,NULL
+    "coulomb_sample_num": {{CSN}},
+    "alpha": 0.052558,
+    "kmax": [ 5 ,5, 5],
+	"energy_rbe_flag": "no"
+    },
+
+    "extend": {
+      //"fix_shake": null,
+      "special_bonds": [ 0, 0, 0.0 ]
+    }
+  },
+
+  "execution": {
+    "ensemble": "NVT", 
+	"group": "all",
+	"com_bias": "no",
+	//"momentum_control" :{
+	//  "nevery":100,
+	//  "group": "all",
+	//  "linear":[1,1,1],
+	//  "angular":true,
+	//  "rescale":true	  
+	//},
+	"integration_type" :"vv",
+	"par_a": 1.0,
+    "par_b": 3.0,	
+    "temperature":[ 343, 343, 5 ],    //50 =100* dt;
+    //"pressure": [ 1.0, 1.0, 1000 ], 
+    "temp_ctrl_type": "NOSE_HOOVER",       //BERENDSEN ,NOSE_HOOVER  
+    //"press_ctrl_type": "NOSE_HOOVER",  	 //BERENDSEN ,NOSE_HOOVER
+    "timestep": 0.5,
+    "num_steps": 20000
+  },
+
+  "outputs": {
+
+    "thermo_out": { 
+      "interval": 1000
+    },
+    
+    "trajectory_out": {
+      "interval": 5000
+    }
+
+  }
+}

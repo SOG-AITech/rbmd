@@ -1,0 +1,50 @@
+#include "unit_factor.h"
+
+#include <algorithm>
+#include <cctype>
+#include <stdexcept>
+
+namespace {
+
+std::string ToUpperUnitKey(std::string unit) {
+  std::transform(unit.begin(), unit.end(), unit.begin(),
+                 [](unsigned char ch) { return std::toupper(ch); });
+  return unit;
+}
+
+}  // namespace
+
+//  unit_factor_map
+std::map<std::string, UNIT> unit_factor_map = {
+    {"LJ", UNIT::LJ}, {"REAL", UNIT::REAL}, {"METAL", UNIT::METAL}};
+
+UNIT ParseUnit(const std::string& unit) {
+  const auto normalized_unit = ToUpperUnitKey(unit);
+  const auto it = unit_factor_map.find(normalized_unit);
+  if (it == unit_factor_map.end()) {
+    throw std::invalid_argument("Unsupported unit style: " + unit);
+  }
+  return it->second;
+}
+
+// LJ
+const rbmd::Real UnitFactor<UNIT::LJ>::_kb = 1.0;
+const rbmd::Real UnitFactor<UNIT::LJ>::_fmt2v = 1.0;
+const rbmd::Real UnitFactor<UNIT::LJ>::_mvv2e = 1.0;
+const rbmd::Real UnitFactor<UNIT::LJ>::_qqr2e = 1.0;
+const rbmd::Real UnitFactor<UNIT::LJ>::_nktv2p = 1.0;
+
+// REAL
+const rbmd::Real UnitFactor<UNIT::REAL>::_kb = 1.9872067 * std::pow(10.0, -3.0);
+const rbmd::Real UnitFactor<UNIT::REAL>::_fmt2v = 4.186 * std::pow(10.0, -4.0);
+const rbmd::Real UnitFactor<UNIT::REAL>::_mvv2e =
+    1.0 / (4.186 * std::pow(10.0, -4.0));
+const rbmd::Real UnitFactor<UNIT::REAL>::_qqr2e = 332.06371;
+const rbmd::Real UnitFactor<UNIT::REAL>::_nktv2p = 68568.415;
+
+// METAL
+const rbmd::Real UnitFactor<UNIT::METAL>::_kb = 8.617343e-5;
+const rbmd::Real UnitFactor<UNIT::METAL>::_fmt2v = 1.0 / 1.0364269e-4;
+const rbmd::Real UnitFactor<UNIT::METAL>::_mvv2e = 1.0364269e-4;
+const rbmd::Real UnitFactor<UNIT::METAL>::_qqr2e = 14.399645;
+const rbmd::Real UnitFactor<UNIT::METAL>::_nktv2p = 1.6021765e6;

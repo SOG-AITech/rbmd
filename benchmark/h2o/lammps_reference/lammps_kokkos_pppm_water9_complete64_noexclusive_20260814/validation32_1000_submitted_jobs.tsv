@@ -1,0 +1,3 @@
+submitted_at	job_id	system	mode	nodes	dcus	atoms	steps	case_dir	dependency
+2026-08-15T07:06:08+08:00	745741	water	strong	8	32	15763896	1000	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_water9_complete64_noexclusive_20260814/water/strong/nodes_08_validate1000_20260815	-
+2026-08-15T07:06:08+08:00	745742	water	weak	8	32	126111168	1000	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_water9_complete64_noexclusive_20260814/water/weak/nodes_08_validate1000_20260815	-

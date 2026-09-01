@@ -1,0 +1,68 @@
+{
+  "init_configuration": {
+    "read_data": {
+      "file": "/public/home/acymkxdx47/RBMD2/benchmark/data/h2o.data",
+      "unit": "REAL",
+      "atom_style": "full",
+      "velocity_type": "GAUSS",
+      "replicate": [
+        3,
+        3,
+        2
+      ],
+      "replicate_bond_periodic": true
+    }
+  },
+  "hyper_parameters": {
+    "force_field": {
+      "type": "CVFF"
+    },
+    "neighbor": {
+      "type": "rbl",
+      "cut_off": 9.0,
+      "r_core": 5.0,
+      "neighbor_sample_num": 30,
+      "skin": 1.0,
+      "energy_rbl_flag": "no"
+    },
+    "coulomb": {
+      "type": "RBE",
+      "coulomb_sample_num": 200,
+      "accuracy": 0.0001,
+      "energy_rbe_flag": "no",
+      "random_seed": 20260720
+    },
+    "extend": {
+      "special_bonds": [
+        0,
+        0,
+        0
+      ],
+      "fix_shake": true
+    }
+  },
+  "execution": {
+    "ensemble": "NVT",
+    "group": "all",
+    "com_bias": "no",
+    "integration_type": "vv",
+    "temperature": [
+      298.0,
+      298.0,
+      5.0
+    ],
+    "temp_ctrl_type": "NOSE_HOOVER",
+    "press_ctrl_type": "BERENDSEN",
+    "timestep": 0.5,
+    "num_steps": 1000
+  },
+  "outputs": {
+    "thermo_out": {
+      "interval": 100
+    },
+    "trajectory_out": {
+      "enabled": false,
+      "interval": 1000
+    }
+  }
+}

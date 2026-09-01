@@ -1,0 +1,18 @@
+{
+  "name": "weak_08dcu_shape3x3x6",
+  "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/lammps_water_weak_shape_aligned_8_16_64_20260816/cases/weak_08dcu_shape3x3x6",
+  "replicate": "6x6x12",
+  "atoms": 31527792,
+  "nodes": 2,
+  "dcus": 8,
+  "dcus_per_node": 4,
+  "steps": 1000,
+  "pair_cutoff": "9/9",
+  "pppm_accuracy": "1e-4",
+  "timer": "full sync",
+  "hip_launch_blocking": 1,
+  "newton": "off",
+  "processor_grid": "2x2x2",
+  "mpi_grid_expected": "2x2x2",
+  "local_replicate_expected": "3x3x6"
+}

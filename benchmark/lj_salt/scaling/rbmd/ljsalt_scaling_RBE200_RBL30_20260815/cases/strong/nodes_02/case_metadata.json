@@ -1,0 +1,20 @@
+{
+  "system": "ljsalt",
+  "mode": "strong",
+  "case": "nodes_02",
+  "nodes": 2,
+  "dcu_per_node": 4,
+  "total_dcus": 8,
+  "replicate": "5x7x4",
+  "base_atoms": 200000,
+  "target_atoms": 28000000,
+  "steps": 1000,
+  "cut_off": 8.0,
+  "r_core": 4.0,
+  "rbl_sample": 30,
+  "rbe_sample": 200,
+  "source_case": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/ljsalt/strong/nodes_02",
+  "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/ljsalt_scaling_RBE200_RBL30_20260815/cases/strong/nodes_02",
+  "source_run_sha256": "06cd54d59980a8f7768b6475c77aadfc7e0559946f72b62618072796e8dd2f6e",
+  "source_slurm_sha256": "6de549ebeba4e7ec8fa0c8a37b4ac339dee0d745ec43a86ba6a99587392dfeac"
+}

@@ -1,0 +1,18 @@
+{
+  "mode": "linear",
+  "name": "atoms_07200000",
+  "gpus": 4,
+  "rep": [
+    3,
+    4,
+    3
+  ],
+  "atoms": 7200000,
+  "system": "ljsalt",
+  "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/rbmd_linear_subnode_20260815/corrected_ljsalt_RBE200_RBL30/cases/linear/atoms_07200000",
+  "steps": 1000,
+  "required_cut_off": 8.0,
+  "required_r_core": 4.0,
+  "required_rbl_sample": 30,
+  "required_rbe_sample": 200
+}

@@ -1,0 +1,21 @@
+{
+  "created": "2026-08-16",
+  "purpose": "Add two small fixed-4-DCU linear-complexity points for LJ-salt and Water",
+  "parameters": {
+    "lj_salt": {
+      "cut_off": 8,
+      "r_core": 4,
+      "RBL": 30,
+      "RBE": 200
+    },
+    "water": {
+      "cut_off": 9,
+      "r_core": 5,
+      "RBL": 30,
+      "RBE": 200
+    },
+    "steps": 1000
+  },
+  "cases": 4,
+  "submission_policy": "One manifest-recorded job active at a time; no exclusive; free partition by default."
+}

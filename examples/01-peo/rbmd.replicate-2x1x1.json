@@ -1,0 +1,64 @@
+{
+  "init_configuration": {
+    "read_data": {
+      "file": "peo+Li.data",
+      "unit": "REAL",
+      "atom_style": "full",
+      "velocity_type": "GAUSS",
+      "replicate": [2, 1, 1],
+      "replicate_bond_periodic": true
+    }
+  },
+
+  "hyper_parameters": {
+    "force_field": {
+      "type": "CVFF",
+      "bond_type": "harmonic",
+      "angle_type": "harmonic",
+      "dihedral_type": "harmonic"
+    },
+
+    "neighbor": {
+      "type": "Verlet-List",
+      "cut_off": 12,
+      "r_core": 6,
+      "neighbor_sample_num": 100
+    },
+
+    "coulomb": {
+      "type": "RBE",
+      "coulomb_sample_num": 2000,
+      "accuracy": 1.0e-4,
+      "energy_rbe_flag": "yes"
+    },
+
+    "extend": {
+      "special_bonds": [0, 0, 0]
+    }
+  },
+
+  "execution": {
+    "ensemble": "NVT",
+    "temperature": [298.0, 298.0, 100],
+    "pressure": [1.0, 1.0, 1000],
+    "temp_ctrl_type": "NOSE_HOOVER",
+    "press_ctrl_type": "NOSE_HOOVER",
+    "timestep": 1.0,
+    "num_steps": 20,
+    "integration_type": "vv"
+  },
+
+  "outputs": {
+    "thermo_out": {
+      "interval": 1
+    },
+
+    "trajectory_out": {
+      "enabled": false
+    },
+
+    "analysis_postprocess": {
+      "enabled": false
+    }
+  }
+}

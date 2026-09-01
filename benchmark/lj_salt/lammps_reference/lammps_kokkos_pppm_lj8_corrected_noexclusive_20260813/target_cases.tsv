@@ -1,0 +1,9 @@
+cutoff	mode	nodes	gpus	atoms	replicate_x	replicate_y	replicate_z	case_dir
+8	strong	1	4	28000000	5	7	4	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_corrected_noexclusive_20260813/lj_salt/strong/nodes_01
+8	strong	2	8	28000000	5	7	4	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_corrected_noexclusive_20260813/lj_salt/strong/nodes_02
+8	strong	4	16	28000000	5	7	4	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_corrected_noexclusive_20260813/lj_salt/strong/nodes_04
+8	strong	8	32	28000000	5	7	4	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_corrected_noexclusive_20260813/lj_salt/strong/nodes_08
+8	weak	1	4	28000000	5	7	4	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_corrected_noexclusive_20260813/lj_salt/weak/nodes_01
+8	weak	2	8	56000000	10	7	4	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_corrected_noexclusive_20260813/lj_salt/weak/nodes_02
+8	weak	4	16	112000000	10	14	4	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_corrected_noexclusive_20260813/lj_salt/weak/nodes_04
+8	weak	8	32	224000000	10	14	8	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_lj8_corrected_noexclusive_20260813/lj_salt/weak/nodes_08

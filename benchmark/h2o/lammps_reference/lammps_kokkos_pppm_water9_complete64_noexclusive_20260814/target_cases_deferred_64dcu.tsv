@@ -1,0 +1,3 @@
+label	system	mode	nodes	gpus	atoms	rx	ry	rz	case_dir
+water_strong_n16	water	strong	16	64	15763896	6	6	6	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_water9_complete64_noexclusive_20260814/water/strong/nodes_16
+water_weak_n16	water	weak	16	64	252222336	24	12	12	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_water9_complete64_noexclusive_20260814/water/weak/nodes_16

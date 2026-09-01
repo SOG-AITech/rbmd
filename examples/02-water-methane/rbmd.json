@@ -1,0 +1,90 @@
+{
+  "init_configuration": {
+    "read_data": {
+      "file": "H2O-CH4.data",
+      "unit": "REAL",
+      "atom_style": "full",
+      "velocity_type": "GAUSS"
+    }
+  },
+  "hyper_parameters": {
+    "force_field": {
+      "type": "CVFF",
+      "bond_type": "harmonic",
+      "angle_type": "harmonic"
+    },
+    "neighbor": {
+      "type": "Verlet-List",
+      "cut_off": 12,
+      "r_core": 5,
+      "neighbor_sample_num": 50
+    },
+    "coulomb": {
+      "type": "RBE",
+      "coulomb_sample_num": 500,
+      "accuracy": 0.00550986,
+      "kmax": [
+        7,
+        7,
+        7
+      ],
+      "energy_rbe_flag": "yes"
+    },
+    "extend": {
+      "special_bonds": [
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "execution": {
+    "ensemble": "NVT",
+    "temperature": [
+      298.0,
+      298.0,
+      50
+    ],
+    "pressure": [
+      1.0,
+      1.0,
+      500,
+      100
+    ],
+    "temp_ctrl_type": "BERENDSEN",
+    "press_ctrl_type": "BERENDSEN",
+    "timestep": 1.0,
+    "num_steps": 10,
+    "integration_type": "vv"
+  },
+  "outputs": {
+    "thermo_out": {
+      "interval": 1
+    },
+    "rdf_out": {
+      "interval": 10,
+      "radius": 10,
+      "dr": 0.1,
+      "statistics_rdf_steps": 10,
+      "atoms_pair": [
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    "msd_out": {
+      "interval": 1000,
+      "start_step": 0,
+      "end_step": 10000
+    },
+    "vacf_out": {
+      "interval": 1000,
+      "start_step": 0,
+      "end_step": 10000
+    },
+    "trajectory_out": {
+      "interval": 100
+    }
+  }
+}

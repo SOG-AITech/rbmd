@@ -1,0 +1,100 @@
+{
+  "created": "2026-08-20",
+  "purpose": "Matched Water strong-scaling anomaly recheck for RBMD and LAMMPS-Kokkos with KISS FFT",
+  "fixed_system": {
+    "replicate": "6x6x6",
+    "atoms": 15763896,
+    "steps": 1000
+  },
+  "policy": "Six jobs submitted together as one afterany chain to prevent self-colocation; no exclusive and no automatic resubmission",
+  "lammps": {
+    "binary": "/public/home/acymkxdx47/software/lammps/build-kokkos/lmp",
+    "sha256": "1638cd0091394daa8f61940f5f33f39535df632676766114060b3717eeb435f8",
+    "settings": "cutoff 9/9, PPPM 1e-4, newton off, timer full sync, HIP_LAUNCH_BLOCKING=1, KISS FFT"
+  },
+  "rbmd": {
+    "binary": "/public/home/acymkxdx47/rbmd/build/rbmd",
+    "sha256": "33d1616445a2b7d911bb1709da7bd4122afde9de917d4f6ede14cb02219cb75f",
+    "settings": "cutoff/core 9/5, RBL 30, RBE 200"
+  },
+  "cases": [
+    {
+      "order": 1,
+      "method": "LAMMPS-Kokkos-KISS",
+      "name": "lammps_16dcu_grid4x2x2",
+      "nodes": 4,
+      "dcus": 16,
+      "atoms": 15763896,
+      "replicate": "6x6x6",
+      "steps": 1000,
+      "processor_grid": "4x2x2",
+      "local_replica_ratio": "1.5x3x3",
+      "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/lammps_16dcu_grid4x2x2"
+    },
+    {
+      "order": 2,
+      "method": "RBMD",
+      "name": "rbmd_16dcu_grid4x2x2",
+      "nodes": 4,
+      "dcus": 16,
+      "atoms": 15763896,
+      "replicate": "6x6x6",
+      "steps": 1000,
+      "processor_grid": "4x2x2",
+      "local_replica_ratio": "1.5x3x3",
+      "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/rbmd_16dcu_grid4x2x2"
+    },
+    {
+      "order": 3,
+      "method": "LAMMPS-Kokkos-KISS",
+      "name": "lammps_32dcu_grid4x4x2",
+      "nodes": 8,
+      "dcus": 32,
+      "atoms": 15763896,
+      "replicate": "6x6x6",
+      "steps": 1000,
+      "processor_grid": "4x4x2",
+      "local_replica_ratio": "1.5x1.5x3",
+      "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/lammps_32dcu_grid4x4x2"
+    },
+    {
+      "order": 4,
+      "method": "RBMD",
+      "name": "rbmd_32dcu_grid4x4x2",
+      "nodes": 8,
+      "dcus": 32,
+      "atoms": 15763896,
+      "replicate": "6x6x6",
+      "steps": 1000,
+      "processor_grid": "4x4x2",
+      "local_replica_ratio": "1.5x1.5x3",
+      "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/rbmd_32dcu_grid4x4x2"
+    },
+    {
+      "order": 5,
+      "method": "LAMMPS-Kokkos-KISS",
+      "name": "lammps_64dcu_grid4x4x4",
+      "nodes": 16,
+      "dcus": 64,
+      "atoms": 15763896,
+      "replicate": "6x6x6",
+      "steps": 1000,
+      "processor_grid": "4x4x4",
+      "local_replica_ratio": "1.5x1.5x1.5",
+      "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/lammps_64dcu_grid4x4x4"
+    },
+    {
+      "order": 6,
+      "method": "RBMD",
+      "name": "rbmd_64dcu_grid4x4x4",
+      "nodes": 16,
+      "dcus": 64,
+      "atoms": 15763896,
+      "replicate": "6x6x6",
+      "steps": 1000,
+      "processor_grid": "4x4x4",
+      "local_replica_ratio": "1.5x1.5x1.5",
+      "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/rbmd_64dcu_grid4x4x4"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+.vs
+out
+CMakeSettings.json
+tools/Windows
+tools/Linux
+lib
+cmake-build-debug
+.idea
+__pycache__/
+*.py[cod]
+.ace-tool/
+.gitnexus
+
+# Build outputs
+build/
+build-*/
+
+# Large datasets and generated trajectories are distributed separately.
+benchmark/data/*.data
+benchmark/h2o/rdf/rdf_compare_final_100k_20260731/equi_bulk.4000000.data
+examples/ljsalt/lj_salt_20w_v.data
+*.trj
+*.traj
+*.lammpstrj
+*.dump

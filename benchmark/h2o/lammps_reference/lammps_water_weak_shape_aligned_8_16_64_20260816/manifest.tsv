@@ -1,0 +1,4 @@
+name	case_dir	replicate	atoms	nodes	dcus	dcus_per_node	steps	pair_cutoff	pppm_accuracy	timer	hip_launch_blocking	newton	processor_grid	mpi_grid_expected	local_replicate_expected
+weak_08dcu_shape3x3x6	/public/home/acymkxdx47/rbmd/build/new_gyf_test/lammps_water_weak_shape_aligned_8_16_64_20260816/cases/weak_08dcu_shape3x3x6	6x6x12	31527792	2	8	4	1000	9/9	1e-4	full sync	1	off	2x2x2	2x2x2	3x3x6
+weak_16dcu_shape3x3x6	/public/home/acymkxdx47/rbmd/build/new_gyf_test/lammps_water_weak_shape_aligned_8_16_64_20260816/cases/weak_16dcu_shape3x3x6	12x6x12	63055584	4	16	4	1000	9/9	1e-4	full sync	1	off	4x2x2	4x2x2	3x3x6
+weak_64dcu_shape3x3x6	/public/home/acymkxdx47/rbmd/build/new_gyf_test/lammps_water_weak_shape_aligned_8_16_64_20260816/cases/weak_64dcu_shape3x3x6	12x12x24	252222336	16	64	4	1000	9/9	1e-4	full sync	1	off	4x4x4	4x4x4	3x3x6

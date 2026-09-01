@@ -1,0 +1,249 @@
+#include "default_position_controller.h"
+
+#include <thrust/copy.h>
+#include <thrust/device_ptr.h>
+
+#include "group_controller_op.h"
+#include "neighbor_list/include/linked_cell/linked_cell_locator.h"
+#include "simulate.h"
+#include "unit_factor.h"
+#include "update_position_op.h"
+
+#ifdef USE_MPI
+#include "rbmd_parallel_until_locator.h"
+#endif
+
+namespace {
+
+Box GetGlobalBoxDevicePtr(const Box& local_box) {
+#ifdef USE_MPI
+  if (!GET_RBMD_PARALLEL) {
+    return local_box;
+  }
+
+  Box global_box = GET_RBMD_PARALLEL->_global_structure_info.global_box;
+  if (GET_RBMD_PARALLEL->_domdec) {
+    const auto& grid = GET_RBMD_PARALLEL->_domdec->_grid_size;
+    if (grid[0] > 1) {
+      global_box._pbc_x = false;
+    }
+    if (grid[1] > 1) {
+      global_box._pbc_y = false;
+    }
+    if (grid[2] > 1) {
+      global_box._pbc_z = false;
+    }
+  }
+  return global_box;
+#else
+  return local_box;
+#endif
+}
+
+}  // namespace
+
+DefaultPositionController::DefaultPositionController(){};
+
+void DefaultPositionController::Init() 
+{
+  auto& num_atoms = *(_structure_info_data->_num_atoms);
+  _dt = DataManager::getInstance().getConfigData()->
+    Get<rbmd::Real>("timestep", "execution");//0.001
+
+  auto unit  = DataManager::getInstance().getConfigData()->Get
+    <std::string>("unit", "init_configuration", "read_data");
+  UNIT unit_factor = ParseUnit(unit);
+
+  switch (unit_factor) {
+    case UNIT::METAL:
+      _fmt2v = UnitFactor<UNIT::METAL>::_fmt2v;
+      break;
+    case UNIT::LJ:
+      _fmt2v = UnitFactor<UNIT::LJ>::_fmt2v;
+      break;
+    case UNIT::REAL:
+      _fmt2v = UnitFactor<UNIT::REAL>::_fmt2v;
+      break;
+    default:
+      break;
+  }
+
+  const auto& config = DataManager::getInstance().getConfigData();
+  auto integration_type = config->Get<std::string>("integration_type", "execution");
+  if("bm" ==integration_type){
+    _par_a = DataManager::getInstance().getConfigData()->Get<rbmd::Real>(
+        "par_a", "execution");
+    _par_b = DataManager::getInstance().getConfigData()->Get<rbmd::Real>(
+            "par_b", "execution");
+    _d_prev_fx.resize(num_atoms, 0.0);
+    _d_prev_fy.resize(num_atoms, 0.0);
+    _d_prev_fz.resize(num_atoms, 0.0);
+    _d_prev_px.resize(num_atoms, 0.0);
+    _d_prev_py.resize(num_atoms, 0.0);
+    _d_prev_pz.resize(num_atoms, 0.0);
+  }
+}
+
+void DefaultPositionController::Update() {
+    const Box pbc_box = GetGlobalBoxDevicePtr(*_box);
+    const rbmd::Id num_atoms = *(_structure_info_data->_num_atoms);
+
+    bool shake = DataManager::getInstance().getConfigData()->GetJudge<bool>
+    ( "fix_shake", "hyper_parameters", "extend");
+    if (shake) {
+        thrust::copy(_device_data->_d_px.begin(), _device_data->_d_px.begin() + num_atoms,
+          _device_data->_d_shake_px.begin());
+        thrust::copy(_device_data->_d_py.begin(), _device_data->_d_py.begin() + num_atoms,
+          _device_data->_d_shake_py.begin());
+        thrust::copy(_device_data->_d_pz.begin(), _device_data->_d_pz.begin() + num_atoms,
+          _device_data->_d_shake_pz.begin());
+
+      op::UpdatePositionOp<device::DEVICE_GPU> ()(
+                        num_atoms, _dt,pbc_box,
+                         thrust::raw_pointer_cast(_device_data->_d_vx.data()),
+                         thrust::raw_pointer_cast(_device_data->_d_vy.data()),
+                         thrust::raw_pointer_cast(_device_data->_d_vz.data()),
+                         thrust::raw_pointer_cast(_device_data->_d_px.data()),
+                         thrust::raw_pointer_cast(_device_data->_d_py.data()),
+                         thrust::raw_pointer_cast(_device_data->_d_pz.data()));
+	    }
+	    else {
+	    op::UpdatePositionFlagOp<device::DEVICE_GPU>()(
+	                        num_atoms, _dt,pbc_box,
+	                       thrust::raw_pointer_cast(_device_data->_d_vx.data()),
+	                       thrust::raw_pointer_cast(_device_data->_d_vy.data()),
+	                       thrust::raw_pointer_cast(_device_data->_d_vz.data()),
+                       thrust::raw_pointer_cast(_device_data->_d_px.data()),
+                       thrust::raw_pointer_cast(_device_data->_d_py.data()),
+                       thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+                       thrust::raw_pointer_cast(_device_data->_d_flagX.data()),
+                       thrust::raw_pointer_cast(_device_data->_d_flagY.data()),
+                       thrust::raw_pointer_cast(_device_data->_d_flagZ.data()));
+
+	      //Unwarp Position
+	      op::UnwarpPositionOp<device::DEVICE_GPU>()(num_atoms,pbc_box,
+	        thrust::raw_pointer_cast(_device_data->_d_px.data()),
+	        thrust::raw_pointer_cast(_device_data->_d_py.data()),
+	        thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+        thrust::raw_pointer_cast(_device_data->_d_flagX.data()),
+        thrust::raw_pointer_cast(_device_data->_d_flagY.data()),
+        thrust::raw_pointer_cast(_device_data->_d_flagZ.data()),
+        thrust::raw_pointer_cast(_device_data->_d_unwarp_px.data()),
+        thrust::raw_pointer_cast(_device_data->_d_unwarp_py.data()),
+        thrust::raw_pointer_cast(_device_data->_d_unwarp_pz.data()));
+
+      auto file_unwarp = false;
+      if (file_unwarp) {
+        thrust::host_vector<rbmd::Real> h_px = _device_data->_d_px;
+        thrust::host_vector<rbmd::Real> h_py = _device_data->_d_py;
+        thrust::host_vector<rbmd::Real> h_pz = _device_data->_d_pz;
+
+        thrust::host_vector<rbmd::Real> h_unwarp_px = _device_data->_d_unwarp_px;
+        thrust::host_vector<rbmd::Real> h_unwarp_py = _device_data->_d_unwarp_py;
+        thrust::host_vector<rbmd::Real> h_unwarp_pz = _device_data->_d_unwarp_pz;
+        thrust::host_vector<rbmd::Id> h_flagX = _device_data->_d_flagX;
+        thrust::host_vector<rbmd::Id> h_flagY = _device_data->_d_flagY;
+        thrust::host_vector<rbmd::Id> h_flagZ = _device_data->_d_flagZ;
+
+        auto atom_id_to_idx =
+          LinkedCellLocator::GetInstance().GetLinkedCell()->_atom_id_to_idx;
+
+        std::ofstream fac_file("h_unwarp.txt");
+        if (fac_file.is_open()) {
+          for (rbmd::Id i = 0; i < h_unwarp_px.size(); ++i) {
+            auto index = atom_id_to_idx[i];
+
+            fac_file << i  << " "<< h_px[ index]  <<", "<< h_py[ index]  << ", " <<h_pz[ index]<<  " ,"<<
+              h_flagX[ index]  <<", "<< h_flagY[ index]  << ", " <<h_flagZ[ index]
+              << " ,"<<h_unwarp_px[ index] <<", " << h_unwarp_py[ index]<< ", " <<  h_unwarp_pz[ index]<<"\n";
+          }
+          fac_file.close();
+        }
+
+      }
+      }
+
+}
+
+void DefaultPositionController::Updatebm() {
+  // _current_step += 1;
+  //std::cout << "test_current_step--p: "  << test_current_step <<  std::endl;
+  const Box pbc_box = GetGlobalBoxDevicePtr(*_box);
+  op::UpdatePositionFlagOpbm<device::DEVICE_GPU>()(
+       *(_structure_info_data->_num_atoms),_fmt2v, _par_a,_par_b, _dt, test_current_step,pbc_box,
+       thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
+       thrust::raw_pointer_cast(_device_data->_d_fx.data()),
+       thrust::raw_pointer_cast(_device_data->_d_fy.data()),
+       thrust::raw_pointer_cast(_device_data->_d_fz.data()),
+       thrust::raw_pointer_cast(_device_data->_d_mass.data()),
+       thrust::raw_pointer_cast(_d_prev_fx.data()),
+       thrust::raw_pointer_cast(_d_prev_fy.data()),
+       thrust::raw_pointer_cast(_d_prev_fz.data()),
+       thrust::raw_pointer_cast(_device_data->_d_vx.data()),
+       thrust::raw_pointer_cast(_device_data->_d_vy.data()),
+       thrust::raw_pointer_cast(_device_data->_d_vz.data()),
+       thrust::raw_pointer_cast(_device_data->_d_px.data()),
+       thrust::raw_pointer_cast(_device_data->_d_py.data()),
+       thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+       thrust::raw_pointer_cast(_device_data->_d_flagX.data()),
+       thrust::raw_pointer_cast(_device_data->_d_flagY.data()),
+       thrust::raw_pointer_cast(_device_data->_d_flagZ.data()));
+}
+
+void DefaultPositionController::SetCenterTargetPositions() {
+  std::string init_type = "inbuild";
+  if (init_type == _init_type) {
+  }
+}
+
+void  DefaultPositionController::PBC() {
+  const Box pbc_box = GetGlobalBoxDevicePtr(*_box);
+  op::PBCOp<device::DEVICE_GPU>()(
+    *(_structure_info_data->_num_atoms),pbc_box,
+    thrust::raw_pointer_cast(_device_data->_d_px.data()),
+    thrust::raw_pointer_cast(_device_data->_d_py.data()),
+    thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+    thrust::raw_pointer_cast(_device_data->_d_flagX.data()),
+    thrust::raw_pointer_cast(_device_data->_d_flagY.data()),
+    thrust::raw_pointer_cast(_device_data->_d_flagZ.data()));
+
+  //Unwarp Position
+  op::UnwarpPositionOp<device::DEVICE_GPU>()(*(_structure_info_data->_num_atoms),pbc_box,
+    thrust::raw_pointer_cast(_device_data->_d_px.data()),
+    thrust::raw_pointer_cast(_device_data->_d_py.data()),
+    thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+    thrust::raw_pointer_cast(_device_data->_d_flagX.data()),
+    thrust::raw_pointer_cast(_device_data->_d_flagY.data()),
+    thrust::raw_pointer_cast(_device_data->_d_flagZ.data()),
+    thrust::raw_pointer_cast(_device_data->_d_unwarp_px.data()),
+    thrust::raw_pointer_cast(_device_data->_d_unwarp_py.data()),
+    thrust::raw_pointer_cast(_device_data->_d_unwarp_pz.data()));
+
+
+  // thrust::host_vector<rbmd::Real> h_px = _device_data->_d_px;
+  // thrust::host_vector<rbmd::Real> h_py = _device_data->_d_py;
+  // thrust::host_vector<rbmd::Real> h_pz = _device_data->_d_pz;
+  //
+  //   thrust::host_vector<rbmd::Real> h_unwarp_px = _device_data->_d_unwarp_px;
+  //   thrust::host_vector<rbmd::Real> h_unwarp_py = _device_data->_d_unwarp_py;
+  //   thrust::host_vector<rbmd::Real> h_unwarp_pz = _device_data->_d_unwarp_pz;
+  //   thrust::host_vector<rbmd::Id> h_flagX = _device_data->_d_flagX;
+  //   thrust::host_vector<rbmd::Id> h_flagY = _device_data->_d_flagY;
+  //   thrust::host_vector<rbmd::Id> h_flagZ = _device_data->_d_flagZ;
+  //
+  //   auto atom_id_to_idx =
+  //     LinkedCellLocator::GetInstance().GetLinkedCell()->_atom_id_to_idx;
+  //
+  //   std::ofstream fac_file("h_unwarp.txt");
+  //   if (fac_file.is_open()) {
+  //     for (rbmd::Id i = 0; i < h_unwarp_px.size(); ++i) {
+  //       auto index = atom_id_to_idx[i];
+  //
+  //       fac_file << i  << " "<< h_px[ i]  <<", "<< h_py[ i]  << ", " <<h_pz[ i]<<  " ,"<<
+  //         h_flagX[ i]  <<", "<< h_flagY[ i]  << ", " <<h_flagZ[ i]
+  //         << " ,"<<h_unwarp_px[ i] <<", " << h_unwarp_py[ i]<< ", " <<  h_unwarp_pz[ i]<<"\n";
+  //     }
+  //     fac_file.close();
+  //   }
+
+}

@@ -1,0 +1,2 @@
+order	name	case_dir	method	nodes	dcus	atoms	steps	processor_grid	purpose
+1	peo_4dcu_grid_2x1x2	/public/home/acymkxdx47/rbmd/build/new_gyf_test/peo_weak_firstpoint_grid_2x1x2_20260819/cases/peo_4dcu_grid_2x1x2	RBMD	1	4	3904800	2000	2x1x2	causal_test_for_original_firstpoint_local_box_misalignment

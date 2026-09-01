@@ -1,0 +1,20 @@
+{
+  "system": "ljsalt",
+  "mode": "weak",
+  "case": "gpus_01",
+  "nodes": 1,
+  "dcu_per_node": 1,
+  "total_dcus": 1,
+  "replicate": "5x7x1",
+  "base_atoms": 200000,
+  "target_atoms": 7000000,
+  "steps": 1000,
+  "cut_off": 8.0,
+  "r_core": 4.0,
+  "rbl_sample": 30,
+  "rbe_sample": 200,
+  "source_case": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/ljsalt/weak/gpus_01",
+  "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/ljsalt_scaling_RBE200_RBL30_20260815/cases/weak/gpus_01",
+  "source_run_sha256": "75ba556cd40fb5b9695116cabc883a613ea909f667347850dcc98b4b5de0ffa6",
+  "source_slurm_sha256": "3e9c8c405e0dd89463e3471e0da4c5ddf83182578cc5bd65c445f3cf0a994eee"
+}

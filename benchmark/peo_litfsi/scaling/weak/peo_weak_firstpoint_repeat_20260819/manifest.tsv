@@ -1,0 +1,3 @@
+order	name	case_dir	method	nodes	dcus	atoms	steps	cutoff_core	rbl_sample	rbe_sample	purpose
+1	weak_4dcu_repeat_a	/public/home/acymkxdx47/rbmd/build/new_gyf_test/peo_weak_firstpoint_repeat_20260819/cases/weak_4dcu_repeat_a	RBMD	1	4	3904800	2000	12/6	200	200	repeat_current_weak_first_point
+2	weak_4dcu_repeat_b	/public/home/acymkxdx47/rbmd/build/new_gyf_test/peo_weak_firstpoint_repeat_20260819/cases/weak_4dcu_repeat_b	RBMD	1	4	3904800	2000	12/6	200	200	repeat_current_weak_first_point

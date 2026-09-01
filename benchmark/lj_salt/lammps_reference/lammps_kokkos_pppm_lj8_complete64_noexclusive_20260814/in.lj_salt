@@ -1,0 +1,28 @@
+# Corrected LAMMPS-Kokkos PPPM LJ-salt benchmark
+
+clear
+units           lj
+dimension       3
+boundary        p p p
+atom_style      charge
+newton          off
+
+pair_style      lj/cut/coul/long 8.0 8.0
+read_data       ${DATA_FILE}
+replicate       ${RX} ${RY} ${RZ}
+
+neighbor        0.3 bin
+neigh_modify    every 1 delay 0 check yes
+kspace_style    pppm 1.0e-4
+
+velocity        all create 1.0 20260811 mom yes rot no dist gaussian loop geom
+timestep        0.001
+fix             integrator all nvt temp 1.0 1.0 1.0 tloop 1 tchain 3
+
+thermo          2000
+thermo_style    custom step atoms temp press pe ke etotal evdwl ecoul elong
+thermo_modify   flush yes lost error
+timer           full sync
+
+variable        RUNSTEPS index 2000
+run             ${RUNSTEPS}

@@ -1,0 +1,1039 @@
+#pragma once
+#include "../../common/device_types.h"
+#include "../../common/types.h"
+#include "../../data_manager/include/model/box.h"
+
+namespace op {
+
+    template <typename DEVICE>
+    struct SpecialLJCutCoulForceOp
+    {
+      void operator()( Box box,const rbmd::Real cut_off,
+            const rbmd::Id num_atoms,
+            const rbmd::Real alpha,
+            const rbmd::Real qqr2e,
+            const rbmd::Id* atoms_type,
+            const rbmd::Id* atoms_id,
+            const rbmd::Id lj_num_types,
+            const rbmd::Real* lj_force12,
+            const rbmd::Real* lj_force6,
+            const rbmd::Id* start_id,
+            const rbmd::Id* end_id,
+            const rbmd::Id* id_verletlist,
+            const int* nspecial,
+            const rbmd::Id* special,
+            int maxspecial,
+            rbmd::Real w12,
+            rbmd::Real w13,
+            rbmd::Real w14,
+            const rbmd::Real* charge,
+            const rbmd::Real* px,
+            const rbmd::Real* py,
+            const rbmd::Real* pz,
+            rbmd::Real* fx,
+            rbmd::Real* fy,
+            rbmd::Real* fz,
+            rbmd::Real* flat_virial,
+            rbmd::Real* total_evdwl,
+            rbmd::Real* total_ecoul);
+    };
+
+    template <typename DEVICE>
+    struct SpecialLJCutCoulRBLForceOp
+    {
+      void operator()( Box box,const rbmd::Real rs,
+        const rbmd::Real rc,
+        const rbmd::Id num_atoms,
+        const rbmd::Id neighbor_sample_num,
+        const rbmd::Id pice_num,
+        const rbmd::Real alpha,
+        const rbmd::Real qqr2e,
+        const rbmd::Id* atoms_type,
+        const rbmd::Id* atoms_id,
+        const rbmd::Id lj_num_types,
+        const rbmd::Real* lj_force12,
+        const rbmd::Real* lj_force6,
+        const rbmd::Id* start_id,
+        const rbmd::Id* end_id,
+        const rbmd::Id* id_verletlist,
+        const rbmd::Id* id_random_neighbor,
+        const rbmd::Id* random_neighbor_num,
+        const int* nspecial,
+        const rbmd::Id* special,
+        int maxspecial,
+        rbmd::Real w12,
+        rbmd::Real w13,
+        rbmd::Real w14,
+        const rbmd::Real* charge,
+        const rbmd::Real* px,
+        const rbmd::Real* py,
+        const rbmd::Real* pz,
+        rbmd::Real* fx,
+        rbmd::Real* fy,
+        rbmd::Real* fz);
+    };
+
+    template <typename DEVICE>
+    struct SpeciaLJCutCoulEnergyOp
+    {
+      void operator()( Box box,const rbmd::Real cut_off,
+           const rbmd::Id num_atoms,
+           const rbmd::Real alpha,
+           const rbmd::Real qqr2e,
+           const rbmd::Id* atoms_type,
+           const rbmd::Id* atoms_id,
+           const rbmd::Real* sigma,
+           const rbmd::Real* eps,
+           const rbmd::Id* start_id,
+           const rbmd::Id* end_id,
+           const rbmd::Id* id_verletlist,
+           const int* nspecial,
+           const rbmd::Id* special,
+           int maxspecial,
+           rbmd::Real w12,
+           rbmd::Real w13,
+           rbmd::Real w14,
+           const rbmd::Real* charge,
+           const rbmd::Real* px,
+           const rbmd::Real* py,
+           const rbmd::Real* pz,
+           rbmd::Real* flat_virial,
+           rbmd::Real* total_evdwl,
+           rbmd::Real* total_ecoul);
+    };
+
+    template <typename DEVICE>
+    struct  ComputeSpecialCoulForceOp
+    {
+      void  operator()(
+         Box box,
+        const rbmd::Id num_atoms,
+        const rbmd::Real qqr2e,
+        const rbmd::Id* atoms_id,
+        const rbmd::Id* atom_id_to_idx,
+        const int* nspecial,
+        const rbmd::Id* special,
+        int maxspecial,
+        rbmd::Real w12,
+        rbmd::Real w13,
+        rbmd::Real w14,
+        const rbmd::Real* charge,
+        const rbmd::Real* px,
+        const rbmd::Real* py,
+        const rbmd::Real* pz,
+        rbmd::Real* fx,
+        rbmd::Real* fy,
+        rbmd::Real* fz,
+        rbmd::Real* flat_virial,
+        rbmd::Real* total_especial_coul);
+    };
+
+     template <typename DEVICE>
+     struct  ComputeBondForceOp
+     {
+       void  operator()(
+          Box box,
+          const rbmd::Id num_atoms,
+         const rbmd::Id num_bonds,
+         const rbmd::Id* atom_id_to_idx,
+         const rbmd::Real* bond_coeffs_k,
+         const rbmd::Real* bond_coeffs_equilibrium,
+         const rbmd::Id* bond_type,
+         const rbmd::Id* bondlisti,
+         const rbmd::Id* bondlistj,
+         const rbmd::Real* px,
+         const rbmd::Real* py,
+         const rbmd::Real* pz,
+         rbmd::Real* fx,
+         rbmd::Real* fy,
+         rbmd::Real* fz,
+         rbmd::Real* flat_virial,
+         rbmd::Real* global_virial,
+         rbmd::Real* energy_bond);
+     };
+
+     template <typename DEVICE>
+     struct ComputeBondForcePerAtomOp
+     {
+       void operator()(
+          Box box,
+          const rbmd::Id num_local_atoms,
+          const rbmd::Id num_total_atoms,
+          const rbmd::Id* atoms_id,
+          const rbmd::Id* atom_id_to_idx,
+          const rbmd::Id atom_id_to_idx_size,
+          const rbmd::Real* bond_coeffs_k,
+          int num_bond_types,
+          const rbmd::Real* bond_coeffs_equilibrium,
+          const int* d_num_bond,
+          const int* d_bond_type,
+          const rbmd::Id* d_bond_atom,
+          int bond_per_atom,
+          const rbmd::Real* px,
+          const rbmd::Real* py,
+          const rbmd::Real* pz,
+          rbmd::Real* fx,
+          rbmd::Real* fy,
+          rbmd::Real* fz,
+          rbmd::Real* energy_bond,
+          unsigned long long* count_bond);
+     };
+
+     template <typename DEVICE>
+     struct ComputeAngleForceOp
+     {
+       void operator()(
+        Box box,
+        const rbmd::Id num_atoms,
+       const rbmd::Id num_anglels,
+       const rbmd::Id* atom_id_to_idx,
+       const rbmd::Real* anglel_coeffs_k,
+       const rbmd::Real* anglel_coeffs_equilibrium,
+       const rbmd::Id* anglel_type,
+       const rbmd::Id* anglelisti,
+       const rbmd::Id* anglelistj,
+       const rbmd::Id* anglelistk,
+       const rbmd::Real* px,
+       const rbmd::Real* py,
+       const rbmd::Real* pz,
+       rbmd::Real* fx,
+       rbmd::Real* fy,
+       rbmd::Real* fz,
+       rbmd::Real* flat_virial,
+       rbmd::Real* global_virial,
+       rbmd::Real* energy_angle);
+     };
+
+     template <typename DEVICE>
+     struct ComputeAngleForcePerAtomOp
+     {
+       void operator()(
+        Box box,
+        const rbmd::Id num_local_atoms,
+        const rbmd::Id num_total_atoms,
+        const rbmd::Id* atoms_id,
+        const rbmd::Id* atom_id_to_idx,
+        const rbmd::Real* anglel_coeffs_k,
+        const rbmd::Real* anglel_coeffs_equilibrium,
+        const int* d_num_angle,
+        const int* d_angle_type,
+        const rbmd::Id* d_angle_atom1,
+        const rbmd::Id* d_angle_atom2,
+        const rbmd::Id* d_angle_atom3,
+        int angle_per_atom,
+        const rbmd::Real* px,
+        const rbmd::Real* py,
+        const rbmd::Real* pz,
+        rbmd::Real* fx,
+        rbmd::Real* fy,
+        rbmd::Real* fz,
+        rbmd::Real* energy_angle,
+        unsigned long long* count_angle);
+     };
+
+     template <typename DEVICE>
+     struct ComputeDihedralForceOp
+     {
+       void operator()(
+        Box box,
+        const rbmd::Id num_atoms,
+       const rbmd::Id num_dihedrals,
+       const rbmd::Id* atom_id_to_idx,
+       const rbmd::Real* dihedral_coeffs_k,
+       const rbmd::Id* dihedral_coeffs_sign ,
+       const rbmd::Id* dihedral_coeffs_multiplicity ,
+       const rbmd::Id* dihedral_type,
+       const rbmd::Id* dihedrallisti,
+       const rbmd::Id* dihedrallistj,
+       const rbmd::Id* dihedrallistk,
+       const rbmd::Id* dihedrallistw,
+       const rbmd::Real* px,
+       const rbmd::Real* py,
+       const rbmd::Real* pz,
+       rbmd::Real* fx,
+       rbmd::Real* fy,
+       rbmd::Real* fz,
+       rbmd::Real* flat_virial,
+       rbmd::Real* global_virial,
+       rbmd::Real* energy_dihedral);
+     };
+
+     template <typename DEVICE>
+     struct ComputeDihedralForcePerAtomOp
+     {
+	    void operator()(
+	       Box box,
+	       const rbmd::Id num_local_atoms,
+	       const rbmd::Id num_total_atoms,
+	       const rbmd::Id* atoms_id,
+	       const rbmd::Id* atom_id_to_idx,
+	       const rbmd::Real* dihedral_coeffs_k,
+        const rbmd::Id* dihedral_coeffs_sign,
+        const rbmd::Id* dihedral_coeffs_multiplicity,
+        const int* d_num_dihedral,
+        const int* d_dihedral_type,
+        const rbmd::Id* d_dihedral_atom1,
+        const rbmd::Id* d_dihedral_atom2,
+        const rbmd::Id* d_dihedral_atom3,
+        const rbmd::Id* d_dihedral_atom4,
+        int dihedral_per_atom,
+        const rbmd::Real* px,
+        const rbmd::Real* py,
+        const rbmd::Real* pz,
+        rbmd::Real* fx,
+        rbmd::Real* fy,
+        rbmd::Real* fz,
+        rbmd::Real* flat_virial,
+        rbmd::Real* energy_dihedral,
+        unsigned long long* count_dihedral);
+     };
+
+  template <typename DEVICE>
+  struct ComputeDihedralOPLSForcePerAtomOp
+  {
+    void operator()(
+       Box box,
+       const rbmd::Id num_local_atoms,
+       const rbmd::Id num_total_atoms,
+       const rbmd::Id* atoms_id,
+       const rbmd::Id* atom_id_to_idx,
+       const rbmd::Real* dihedral_coeffs_k1,
+       const rbmd::Real* dihedral_coeffs_k2,
+       const rbmd::Real* dihedral_coeffs_k3,
+       const rbmd::Real* dihedral_coeffs_k4,
+       const int* d_num_dihedral,
+       const int* d_dihedral_type,
+       const rbmd::Id* d_dihedral_atom1,
+       const rbmd::Id* d_dihedral_atom2,
+       const rbmd::Id* d_dihedral_atom3,
+       const rbmd::Id* d_dihedral_atom4,
+       int dihedral_per_atom,
+       const rbmd::Real* px,
+       const rbmd::Real* py,
+       const rbmd::Real* pz,
+       rbmd::Real* fx,
+       rbmd::Real* fy,
+       rbmd::Real* fz,
+       rbmd::Real* flat_virial,
+       rbmd::Real* energy_dihedral,
+       unsigned long long* count_dihedral);
+  };
+
+  template <typename DEVICE>
+  struct ComputeDihedralOPLSForceOp
+  {
+    void operator()(
+     Box box,
+     const rbmd::Id num_atoms,
+    const rbmd::Id num_dihedrals,
+    const rbmd::Id* atom_id_to_idx,
+    const rbmd::Real* dihedral_coeffs_k1,
+    const rbmd::Real* dihedral_coeffs_k2,
+    const rbmd::Real* dihedral_coeffs_k3,
+    const rbmd::Real* dihedral_coeffs_k4,
+    const rbmd::Id* dihedral_type,
+    const rbmd::Id* dihedrallisti,
+    const rbmd::Id* dihedrallistj,
+    const rbmd::Id* dihedrallistk,
+    const rbmd::Id* dihedrallistw,
+    const rbmd::Real* px,
+    const rbmd::Real* py,
+    const rbmd::Real* pz,
+    rbmd::Real* fx,
+    rbmd::Real* fy,
+    rbmd::Real* fz,
+    rbmd::Real* flat_virial,
+    rbmd::Real* global_virial,
+    rbmd::Real* energy_dihedral);
+  };
+
+  template <typename DEVICE>
+  struct ComputeDihedralFourierForceOp
+  {
+    void operator()(
+      Box box, const rbmd::Id num_atoms, const rbmd::Id num_dihedrals,
+      const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
+      const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
+      const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
+      const rbmd::Id* dihedral_type, const rbmd::Id* dihedrallisti,
+      const rbmd::Id* dihedrallistj, const rbmd::Id* dihedrallistk,
+      const rbmd::Id* dihedrallistw, const rbmd::Real* px, const rbmd::Real* py,
+      const rbmd::Real* pz,rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
+      rbmd::Real* flat_virial, rbmd::Real* global_virial,
+      rbmd::Real* energy_dihedral);
+  };
+
+  template <typename DEVICE>
+  struct ComputeDihedralFourierForcePerAtomOp
+  {
+    void operator()(
+      Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
+      const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
+      const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
+      const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
+      const int* d_num_dihedral, const int* d_dihedral_type,
+      const rbmd::Id* d_dihedral_atom1, const rbmd::Id* d_dihedral_atom2,
+      const rbmd::Id* d_dihedral_atom3, const rbmd::Id* d_dihedral_atom4,
+      int dihedral_per_atom, const rbmd::Real* px, const rbmd::Real* py,
+      const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
+      rbmd::Real* flat_virial, rbmd::Real* energy_dihedral,
+      unsigned long long* count_dihedral);
+  };
+
+    template <typename DEVICE>
+    struct ComputeImproperHarmonicForceOp
+    {
+      void operator()(
+         Box box,
+         const rbmd::Id num_atoms,
+        const rbmd::Id num_impropers,
+        const rbmd::Id* atom_id_to_idx,
+        const rbmd::Real* improper_coeffs_k,
+        const rbmd::Real* improper_coeffs_chi,
+        const rbmd::Id* improper_type,
+        const rbmd::Id* improperlisti,
+        const rbmd::Id* improperlistj,
+        const rbmd::Id* improperlistk,
+        const rbmd::Id* improperlistw,
+        const rbmd::Real* px,
+        const rbmd::Real* py,
+        const rbmd::Real* pz,
+        rbmd::Real* fx,
+        rbmd::Real* fy,
+        rbmd::Real* fz,
+        rbmd::Real* flat_virial,
+        rbmd::Real* energy_improper);
+  };
+
+template <typename DEVICE>
+struct ComputeImproperCVFFForceOp
+{
+  void operator()(
+     Box box,
+     const rbmd::Id num_atoms,
+    const rbmd::Id num_impropers,
+    const rbmd::Id* atom_id_to_idx,
+    const rbmd::Real* improper_coeffs_k,
+    const rbmd::Id* improper_coeffs_d,
+    const rbmd::Id* improper_coeffs_n,
+    const rbmd::Id* improper_type,
+    const rbmd::Id* improperlisti,
+    const rbmd::Id* improperlistj,
+    const rbmd::Id* improperlistk,
+    const rbmd::Id* improperlistw,
+    const rbmd::Real* px,
+    const rbmd::Real* py,
+    const rbmd::Real* pz,
+    rbmd::Real* fx,
+    rbmd::Real* fy,
+    rbmd::Real* fz,
+    rbmd::Real* flat_virial,
+    rbmd::Real* energy_improper);
+};
+
+template <typename DEVICE>
+struct ComputeImproperHarmonicPerAtomOp
+{
+	  void operator()(
+	     Box box,
+	     const rbmd::Id num_local_atoms,
+	     const rbmd::Id num_total_atoms,
+	     const rbmd::Id* atoms_id,
+	     const rbmd::Id* atom_id_to_idx,
+	     const rbmd::Real* improper_coeffs_k,
+     const rbmd::Real* improper_coeffs_chi,
+     const int* d_num_improper,
+     const int* d_improper_type,
+     const rbmd::Id* d_improper_atom1,
+     const rbmd::Id* d_improper_atom2,
+     const rbmd::Id* d_improper_atom3,
+     const rbmd::Id* d_improper_atom4,
+     int improper_per_atom,
+     const rbmd::Real* px,
+     const rbmd::Real* py,
+	     const rbmd::Real* pz,
+	     rbmd::Real* fx,
+	     rbmd::Real* fy,
+	     rbmd::Real* fz,
+	     rbmd::Real* flat_virial,
+	     rbmd::Real* energy_improper,
+	     unsigned long long* count_improper);
+	};
+
+template <typename DEVICE>
+struct ComputeImproperCVFFPerAtomOp
+{
+	  void operator()(
+	     Box box,
+	     const rbmd::Id num_local_atoms,
+	     const rbmd::Id num_total_atoms,
+	     const rbmd::Id* atoms_id,
+	     const rbmd::Id* atom_id_to_idx,
+	     const rbmd::Real* improper_coeffs_k,
+     const rbmd::Id* improper_coeffs_d,
+     const rbmd::Id* improper_coeffs_n,
+     const int* d_num_improper,
+     const int* d_improper_type,
+     const rbmd::Id* d_improper_atom1,
+     const rbmd::Id* d_improper_atom2,
+     const rbmd::Id* d_improper_atom3,
+     const rbmd::Id* d_improper_atom4,
+     int improper_per_atom,
+     const rbmd::Real* px,
+     const rbmd::Real* py,
+	     const rbmd::Real* pz,
+	     rbmd::Real* fx,
+	     rbmd::Real* fy,
+	     rbmd::Real* fz,
+	     rbmd::Real* flat_virial,
+	     rbmd::Real* energy_improper,
+	     unsigned long long* count_improper);
+	};
+
+template <typename DEVICE>
+struct ComputeSpecialLJCutCoulForceUserOp
+{
+  void operator()(    Box box, const rbmd::Real cut_off, const rbmd::Id num_atoms,const  rbmd::Real qqr2e,
+    const rbmd::Real rbsog_sigma,const rbmd::Real rbsog_b, const rbmd::Id rbsog_mmax,
+    const rbmd::Real rbsog_w0,const rbmd::Real* taylor_coeff,
+    const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
+    const rbmd::Real* sigma, const rbmd::Real* eps,
+    const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
+    const int* nspecial, const rbmd::Id* special, int maxspecial,
+    rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
+    const rbmd::Real* charge, const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
+    rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
+    rbmd::Real* flat_virial, rbmd::Real* total_evdwl, rbmd::Real* total_ecoul);
+};
+
+
+template <typename DEVICE>
+struct ReduceVirialOp
+{
+  void operator()(const rbmd::Id num_atoms,const rbmd::Id pitch,
+        const rbmd::Real* d_flat_virial_atom,rbmd::Real* d_virial);
+};
+
+ ///////////////////////
+
+
+  template <>
+  struct SpecialLJCutCoulForceOp<device::DEVICE_GPU>
+  {
+    void operator()( Box box,const rbmd::Real cut_off,
+          const rbmd::Id num_atoms,
+          const rbmd::Real alpha,
+          const rbmd::Real qqr2e,
+          const rbmd::Id* atoms_type,
+          const rbmd::Id* atoms_id,
+          const rbmd::Id lj_num_types,
+          const rbmd::Real* lj_force12,
+          const rbmd::Real* lj_force6,
+          const rbmd::Id* start_id,
+          const rbmd::Id* end_id,
+          const rbmd::Id* id_verletlist,
+          const int* nspecial,
+          const rbmd::Id* special,
+          int maxspecial,
+          rbmd::Real w12,
+          rbmd::Real w13,
+          rbmd::Real w14,
+          const rbmd::Real* charge,
+          const rbmd::Real* px,
+          const rbmd::Real* py,
+          const rbmd::Real* pz,
+          rbmd::Real* fx,
+          rbmd::Real* fy,
+          rbmd::Real* fz,
+          rbmd::Real* flat_virial,
+          rbmd::Real* total_evdwl,
+          rbmd::Real* total_ecoul);
+  };
+
+
+  template <>
+   struct SpecialLJCutCoulRBLForceOp<device::DEVICE_GPU>
+  {
+    void operator()( Box box,const rbmd::Real rs,
+     const rbmd::Real rc,
+     const rbmd::Id num_atoms,
+     const rbmd::Id neighbor_sample_num,
+     const rbmd::Id pice_num,
+     const rbmd::Real alpha,
+     const rbmd::Real qqr2e,
+     const rbmd::Id* atoms_type,
+     const rbmd::Id* atoms_id,
+     const rbmd::Id lj_num_types,
+     const rbmd::Real* lj_force12,
+     const rbmd::Real* lj_force6,
+     const rbmd::Id* start_id,
+     const rbmd::Id* end_id,
+     const rbmd::Id* id_verletlist,
+     const rbmd::Id* id_random_neighbor,
+     const rbmd::Id* random_neighbor_num,
+     const int* nspecial,
+     const rbmd::Id* special,
+     int maxspecial,
+     rbmd::Real w12,
+     rbmd::Real w13,
+     rbmd::Real w14,
+     const rbmd::Real* charge,
+     const rbmd::Real* px,
+     const rbmd::Real* py,
+     const rbmd::Real* pz,
+     rbmd::Real* fx,
+     rbmd::Real* fy,
+     rbmd::Real* fz);
+  };
+
+
+
+  template <>
+  struct SpeciaLJCutCoulEnergyOp<device::DEVICE_GPU>
+  {
+    void operator()( Box box,const rbmd::Real cut_off,
+         const rbmd::Id num_atoms,
+         const rbmd::Real alpha,
+         const rbmd::Real qqr2e,
+         const rbmd::Id* atoms_type,
+         const rbmd::Id* atoms_id,
+         const rbmd::Real* sigma,
+         const rbmd::Real* eps,
+         const rbmd::Id* start_id,
+         const rbmd::Id* end_id,
+         const rbmd::Id* id_verletlist,
+         const int* nspecial,
+         const rbmd::Id* special,
+         int maxspecial,
+         rbmd::Real w12,
+         rbmd::Real w13,
+         rbmd::Real w14,
+         const rbmd::Real* charge,
+         const rbmd::Real* px,
+         const rbmd::Real* py,
+         const rbmd::Real* pz,
+         rbmd::Real* flat_virial,
+         rbmd::Real* total_evdwl,
+         rbmd::Real* total_ecoul);
+  };
+
+
+  template <>
+  struct  ComputeSpecialCoulForceOp<device::DEVICE_GPU>
+  {
+    void  operator()(
+       Box box,
+      const rbmd::Id num_atoms,
+      const rbmd::Real qqr2e,
+      const rbmd::Id* atoms_id,
+      const rbmd::Id* atom_id_to_idx,
+      const int* nspecial,
+      const rbmd::Id* special,
+      int maxspecial,
+      rbmd::Real w12,
+      rbmd::Real w13,
+      rbmd::Real w14,
+      const rbmd::Real* charge,
+      const rbmd::Real* px,
+      const rbmd::Real* py,
+      const rbmd::Real* pz,
+      rbmd::Real* fx,
+      rbmd::Real* fy,
+      rbmd::Real* fz,
+      rbmd::Real* flat_virial,
+      rbmd::Real* total_especial_coul);
+  };
+
+  template <>
+  struct  ComputeBondForceOp<device::DEVICE_GPU>
+  {
+    void  operator()(
+       Box box,
+       const rbmd::Id num_atoms,
+      const rbmd::Id num_bonds,
+      const rbmd::Id* atom_id_to_idx,
+      const rbmd::Real* bond_coeffs_k,
+      const rbmd::Real* bond_coeffs_equilibrium,
+      const rbmd::Id* bond_type,
+      const rbmd::Id* bondlisti,
+      const rbmd::Id* bondlistj,
+      const rbmd::Real* px,
+      const rbmd::Real* py,
+      const rbmd::Real* pz,
+      rbmd::Real* fx,
+      rbmd::Real* fy,
+      rbmd::Real* fz,
+      rbmd::Real* flat_virial,
+      rbmd::Real* global_virial,
+      rbmd::Real* energy_bond);
+  };
+
+  template <>
+  struct ComputeBondForcePerAtomOp<device::DEVICE_GPU>
+  {
+    void operator()(
+       Box box,
+       const rbmd::Id num_local_atoms,
+       const rbmd::Id num_total_atoms,
+       const rbmd::Id* atoms_id,
+       const rbmd::Id* atom_id_to_idx,
+       const rbmd::Id atom_id_to_idx_size,
+       const rbmd::Real* bond_coeffs_k,
+       int num_bond_types,
+       const rbmd::Real* bond_coeffs_equilibrium,
+       const int* d_num_bond,
+       const int* d_bond_type,
+       const rbmd::Id* d_bond_atom,
+       int bond_per_atom,
+       const rbmd::Real* px,
+       const rbmd::Real* py,
+       const rbmd::Real* pz,
+       rbmd::Real* fx,
+       rbmd::Real* fy,
+       rbmd::Real* fz,
+       rbmd::Real* energy_bond,
+       unsigned long long* count_bond);
+  };
+
+
+  template <>
+  struct ComputeAngleForceOp<device::DEVICE_GPU>
+  {
+    void operator()(
+     Box box,
+     const rbmd::Id num_atoms,
+    const rbmd::Id num_anglels,
+    const rbmd::Id* atom_id_to_idx,
+    const rbmd::Real* anglel_coeffs_k,
+    const rbmd::Real* anglel_coeffs_equilibrium,
+    const rbmd::Id* anglel_type,
+    const rbmd::Id* anglelisti,
+    const rbmd::Id* anglelistj,
+    const rbmd::Id* anglelistk,
+    const rbmd::Real* px,
+    const rbmd::Real* py,
+    const rbmd::Real* pz,
+    rbmd::Real* fx,
+    rbmd::Real* fy,
+    rbmd::Real* fz,
+    rbmd::Real* flat_virial,
+    rbmd::Real* global_virial,
+    rbmd::Real* energy_angle);
+  };
+
+  template <>
+  struct ComputeAngleForcePerAtomOp<device::DEVICE_GPU>
+  {
+    void operator()(
+     Box box,
+     const rbmd::Id num_local_atoms,
+     const rbmd::Id num_total_atoms,
+     const rbmd::Id* atoms_id,
+     const rbmd::Id* atom_id_to_idx,
+     const rbmd::Real* anglel_coeffs_k,
+     const rbmd::Real* anglel_coeffs_equilibrium,
+     const int* d_num_angle,
+     const int* d_angle_type,
+     const rbmd::Id* d_angle_atom1,
+     const rbmd::Id* d_angle_atom2,
+     const rbmd::Id* d_angle_atom3,
+     int angle_per_atom,
+     const rbmd::Real* px,
+     const rbmd::Real* py,
+     const rbmd::Real* pz,
+     rbmd::Real* fx,
+     rbmd::Real* fy,
+     rbmd::Real* fz,
+     rbmd::Real* energy_angle,
+     unsigned long long* count_angle);
+  };
+
+  template <>
+  struct ComputeDihedralForceOp<device::DEVICE_GPU>
+  {
+    void operator()(
+       Box box,
+       const rbmd::Id num_atoms,
+      const rbmd::Id num_dihedrals,
+      const rbmd::Id* atom_id_to_idx,
+      const rbmd::Real* dihedral_coeffs_k,
+      const rbmd::Id* dihedral_coeffs_sign ,
+      const rbmd::Id* dihedral_coeffs_multiplicity ,
+      const rbmd::Id* dihedral_type,
+      const rbmd::Id* dihedrallisti,
+      const rbmd::Id* dihedrallistj,
+      const rbmd::Id* dihedrallistk,
+      const rbmd::Id* dihedrallistw,
+      const rbmd::Real* px,
+      const rbmd::Real* py,
+      const rbmd::Real* pz,
+      rbmd::Real* fx,
+      rbmd::Real* fy,
+      rbmd::Real* fz,
+      rbmd::Real* flat_virial,
+      rbmd::Real* global_virial,
+      rbmd::Real* energy_dihedral);
+  };
+
+  template <>
+  struct ComputeDihedralForcePerAtomOp<device::DEVICE_GPU>
+  {
+	    void operator()(
+	       Box box,
+	       const rbmd::Id num_local_atoms,
+	       const rbmd::Id num_total_atoms,
+	       const rbmd::Id* atoms_id,
+	       const rbmd::Id* atom_id_to_idx,
+	       const rbmd::Real* dihedral_coeffs_k,
+       const rbmd::Id* dihedral_coeffs_sign,
+       const rbmd::Id* dihedral_coeffs_multiplicity,
+       const int* d_num_dihedral,
+       const int* d_dihedral_type,
+       const rbmd::Id* d_dihedral_atom1,
+       const rbmd::Id* d_dihedral_atom2,
+       const rbmd::Id* d_dihedral_atom3,
+       const rbmd::Id* d_dihedral_atom4,
+       int dihedral_per_atom,
+       const rbmd::Real* px,
+       const rbmd::Real* py,
+       const rbmd::Real* pz,
+       rbmd::Real* fx,
+       rbmd::Real* fy,
+       rbmd::Real* fz,
+       rbmd::Real* flat_virial,
+       rbmd::Real* energy_dihedral,
+       unsigned long long* count_dihedral);
+  };
+
+  template <>
+  struct ComputeDihedralOPLSForcePerAtomOp<device::DEVICE_GPU>
+  {
+    void operator()(
+       Box box,
+       const rbmd::Id num_local_atoms,
+       const rbmd::Id num_total_atoms,
+       const rbmd::Id* atoms_id,
+       const rbmd::Id* atom_id_to_idx,
+       const rbmd::Real* dihedral_coeffs_k1,
+       const rbmd::Real* dihedral_coeffs_k2,
+       const rbmd::Real* dihedral_coeffs_k3,
+       const rbmd::Real* dihedral_coeffs_k4,
+       const int* d_num_dihedral,
+       const int* d_dihedral_type,
+       const rbmd::Id* d_dihedral_atom1,
+       const rbmd::Id* d_dihedral_atom2,
+       const rbmd::Id* d_dihedral_atom3,
+       const rbmd::Id* d_dihedral_atom4,
+       int dihedral_per_atom,
+       const rbmd::Real* px,
+       const rbmd::Real* py,
+       const rbmd::Real* pz,
+       rbmd::Real* fx,
+       rbmd::Real* fy,
+       rbmd::Real* fz,
+       rbmd::Real* flat_virial,
+       rbmd::Real* energy_dihedral,
+       unsigned long long* count_dihedral);
+  };
+
+  template <>
+  struct ComputeDihedralOPLSForceOp<device::DEVICE_GPU>
+  {
+    void operator()(
+       Box box,
+       const rbmd::Id num_atoms,
+      const rbmd::Id num_dihedrals,
+      const rbmd::Id* atom_id_to_idx,
+      const rbmd::Real* dihedral_coeffs_k1,
+      const rbmd::Real* dihedral_coeffs_k2,
+      const rbmd::Real* dihedral_coeffs_k3,
+      const rbmd::Real* dihedral_coeffs_k4,
+      const rbmd::Id* dihedral_type,
+      const rbmd::Id* dihedrallisti,
+      const rbmd::Id* dihedrallistj,
+      const rbmd::Id* dihedrallistk,
+      const rbmd::Id* dihedrallistw,
+      const rbmd::Real* px,
+      const rbmd::Real* py,
+      const rbmd::Real* pz,
+      rbmd::Real* fx,
+      rbmd::Real* fy,
+      rbmd::Real* fz,
+      rbmd::Real* flat_virial,
+      rbmd::Real* global_virial,
+      rbmd::Real* energy_dihedral);
+  };
+
+  template <>
+  struct ComputeDihedralFourierForceOp<device::DEVICE_GPU>
+  {
+    void operator()(
+      Box box, const rbmd::Id num_atoms, const rbmd::Id num_dihedrals,
+      const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
+      const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
+      const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
+      const rbmd::Id* dihedral_type, const rbmd::Id* dihedrallisti,
+      const rbmd::Id* dihedrallistj, const rbmd::Id* dihedrallistk,
+      const rbmd::Id* dihedrallistw, const rbmd::Real* px, const rbmd::Real* py,
+      const rbmd::Real* pz,rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
+      rbmd::Real* flat_virial, rbmd::Real* global_virial,
+      rbmd::Real* energy_dihedral);
+  };
+
+  template <>
+  struct ComputeDihedralFourierForcePerAtomOp<device::DEVICE_GPU>
+  {
+    void operator()(
+      Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
+      const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
+      const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
+      const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
+      const int* d_num_dihedral, const int* d_dihedral_type,
+      const rbmd::Id* d_dihedral_atom1, const rbmd::Id* d_dihedral_atom2,
+      const rbmd::Id* d_dihedral_atom3, const rbmd::Id* d_dihedral_atom4,
+      int dihedral_per_atom, const rbmd::Real* px, const rbmd::Real* py,
+      const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
+      rbmd::Real* flat_virial, rbmd::Real* energy_dihedral,
+      unsigned long long* count_dihedral);
+  };
+
+  template <>
+  struct ComputeImproperHarmonicForceOp<device::DEVICE_GPU>
+  {
+    void operator()(
+         Box box,
+       const rbmd::Id num_atoms,
+      const rbmd::Id num_impropers,
+      const rbmd::Id* atom_id_to_idx,
+      const rbmd::Real* improper_coeffs_k,
+      const rbmd::Real* improper_coeffs_chi,
+      const rbmd::Id* improper_type,
+      const rbmd::Id* improperlisti,
+      const rbmd::Id* improperlistj,
+      const rbmd::Id* improperlistk,
+      const rbmd::Id* improperlistw,
+      const rbmd::Real* px,
+      const rbmd::Real* py,
+      const rbmd::Real* pz,
+      rbmd::Real* fx,
+      rbmd::Real* fy,
+      rbmd::Real* fz,
+      rbmd::Real* flat_virial,
+      rbmd::Real* energy_improper);
+  };
+
+template <>
+struct ComputeImproperCVFFForceOp<device::DEVICE_GPU>
+{
+  void operator()(
+     Box box,
+     const rbmd::Id num_atoms,
+    const rbmd::Id num_impropers,
+    const rbmd::Id* atom_id_to_idx,
+    const rbmd::Real* improper_coeffs_k,
+    const rbmd::Id* improper_coeffs_d,
+    const rbmd::Id* improper_coeffs_n,
+    const rbmd::Id* improper_type,
+    const rbmd::Id* improperlisti,
+    const rbmd::Id* improperlistj,
+    const rbmd::Id* improperlistk,
+    const rbmd::Id* improperlistw,
+    const rbmd::Real* px,
+    const rbmd::Real* py,
+    const rbmd::Real* pz,
+    rbmd::Real* fx,
+    rbmd::Real* fy,
+    rbmd::Real* fz,
+    rbmd::Real* flat_virial,
+    rbmd::Real* energy_improper);
+};
+
+template <>
+struct ComputeImproperHarmonicPerAtomOp<device::DEVICE_GPU>
+{
+	  void operator()(
+	     Box box,
+	     const rbmd::Id num_local_atoms,
+	     const rbmd::Id num_total_atoms,
+	     const rbmd::Id* atoms_id,
+	     const rbmd::Id* atom_id_to_idx,
+	     const rbmd::Real* improper_coeffs_k,
+     const rbmd::Real* improper_coeffs_chi,
+     const int* d_num_improper,
+     const int* d_improper_type,
+     const rbmd::Id* d_improper_atom1,
+     const rbmd::Id* d_improper_atom2,
+     const rbmd::Id* d_improper_atom3,
+     const rbmd::Id* d_improper_atom4,
+     int improper_per_atom,
+     const rbmd::Real* px,
+     const rbmd::Real* py,
+	     const rbmd::Real* pz,
+	     rbmd::Real* fx,
+	     rbmd::Real* fy,
+	     rbmd::Real* fz,
+	     rbmd::Real* flat_virial,
+	     rbmd::Real* energy_improper,
+	     unsigned long long* count_improper);
+	};
+
+template <>
+struct ComputeImproperCVFFPerAtomOp<device::DEVICE_GPU>
+{
+	  void operator()(
+	     Box box,
+	     const rbmd::Id num_local_atoms,
+	     const rbmd::Id num_total_atoms,
+	     const rbmd::Id* atoms_id,
+	     const rbmd::Id* atom_id_to_idx,
+	     const rbmd::Real* improper_coeffs_k,
+     const rbmd::Id* improper_coeffs_d,
+     const rbmd::Id* improper_coeffs_n,
+     const int* d_num_improper,
+     const int* d_improper_type,
+     const rbmd::Id* d_improper_atom1,
+     const rbmd::Id* d_improper_atom2,
+     const rbmd::Id* d_improper_atom3,
+     const rbmd::Id* d_improper_atom4,
+     int improper_per_atom,
+     const rbmd::Real* px,
+     const rbmd::Real* py,
+     const rbmd::Real* pz,
+     rbmd::Real* fx,
+     rbmd::Real* fy,
+     rbmd::Real* fz,
+     rbmd::Real* flat_virial,
+     rbmd::Real* energy_improper,
+     unsigned long long* count_improper);
+};
+
+template <>
+struct ReduceVirialOp<device::DEVICE_GPU>
+{
+  void operator()(const rbmd::Id num_atoms,const rbmd::Id pitch,
+        const rbmd::Real* d_flat_virial_atom,rbmd::Real* d_virial);
+};
+
+template <>
+struct ComputeSpecialLJCutCoulForceUserOp<device::DEVICE_GPU>
+{
+  void operator()(    Box box, const rbmd::Real cut_off, const rbmd::Id num_atoms,const  rbmd::Real qqr2e,
+    const rbmd::Real rbsog_sigma,const rbmd::Real rbsog_b, const rbmd::Id rbsog_mmax,
+    const rbmd::Real rbsog_w0,const rbmd::Real* taylor_coeff,
+    const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
+    const rbmd::Real* sigma, const rbmd::Real* eps,
+    const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
+    const int* nspecial, const rbmd::Id* special, int maxspecial,
+    rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
+    const rbmd::Real* charge, const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
+    rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
+    rbmd::Real* flat_virial, rbmd::Real* total_evdwl, rbmd::Real* total_ecoul);
+};
+
+
+
+}

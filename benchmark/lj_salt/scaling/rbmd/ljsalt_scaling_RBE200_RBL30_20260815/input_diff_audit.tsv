@@ -1,0 +1,13 @@
+mode	case	only_sample_mapping_changed	slurm_byte_identical	active_exclusive
+strong	gpus_64	True	True	False
+strong	nodes_01	True	True	False
+strong	nodes_02	True	True	False
+strong	nodes_04	True	True	False
+strong	nodes_08	True	True	False
+weak	gpus_01	True	True	False
+weak	gpus_02	True	True	False
+weak	gpus_64	True	True	False
+weak	nodes_01	True	True	False
+weak	nodes_02	True	True	False
+weak	nodes_04	True	True	False
+weak	nodes_08	True	True	False

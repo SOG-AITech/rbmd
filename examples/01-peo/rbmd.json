@@ -1,0 +1,110 @@
+﻿{
+  "init_configuration": {
+
+    "read_data": {
+      "file": "peo+Li.data",
+      "unit": "REAL", 
+      "atom_style": "full",   //atomic，charge,full
+      "velocity_type": "GAUSS"
+    }
+
+    //"inbuild": {
+    //  "dims": [ 10, 10, 10 ],
+    //  "x_range": [ 0.0, 10 ],
+    //  "y_range": [ 0.0, 10 ],
+    //  "z_range": [ 0.0, 10 ],
+    //  "velocity_type": "GAUSS",
+    //  "unit": "LJ"
+    //}
+  },
+
+  "hyper_parameters": {
+    "force_field": {
+      "type": "CVFF",
+	   //"potential_file": "/path/to/"
+	  "bond_type": "harmonic",  		// harmonic 
+	  "angle_type": "harmonic",   		// harmonic 
+	  "dihedral_type": "harmonic"		// harmonic , opls
+	  //"improper_type": "harmonic"  	  	// harmonic , cvff
+    },
+
+    "neighbor": {
+      "type": "Verlet-List", //RBL,Verlet-List
+      "cut_off": 12,
+      "r_core": 6,
+      "neighbor_sample_num": 100
+	  //"energy_rbl_flag":  "yes"    //yes ,no 
+    },
+
+    "coulomb": {
+      "type": "RBE", //  RBE,EWALD
+      "coulomb_sample_num": 2000,
+      "accuracy": 1.0e-4,
+      //"alpha": 0.04333893,
+      //"kmax": [ 18 ,34 ,22],
+	  "energy_rbe_flag":  "yes"   //yes ,no 
+    },
+
+    "extend": {
+      //"fix_shake": null,
+      "special_bonds": [ 0, 0, 0 ]
+    }
+  },
+
+  "execution": {
+    "ensemble": "NVT", 					// "NVE","NVT" ,"NPT"
+    "temperature":[ 298.0, 298.0, 100 ],    //50 =100* dt;
+    "pressure": [ 1.0, 1.0, 1000 ], 
+    "temp_ctrl_type": "NOSE_HOOVER",       //BERENDSEN ,NOSE_HOOVER  
+    "press_ctrl_type": "NOSE_HOOVER",  	 //BERENDSEN ,NOSE_HOOVER
+    "timestep": 1.0,
+    "num_steps": 3000, //run
+    "integration_type": "vv"
+  },
+
+  "outputs": {
+
+    "thermo_out": { 
+      "interval": 100
+    },
+
+    "rdf_out": {
+      "interval": 10,
+      "radius": 10,
+      "dr": 0.1,
+      "statistics_rdf_steps": 1000,
+      "groups": [
+        {
+          "name": "Li",
+          "types": [ 1 ]
+        },
+        {
+          "name": "O",
+          "types": [ 4, 9, 11 ]
+        }
+      ],
+      "group_pairs": [
+        [ "Li", "Li" ],
+        [ "Li", "O" ],
+        [ "O", "O" ]
+      ]
+    },
+    
+    "msd_out": {
+      "interval": 10,
+      "start_step": 0,
+      "end_step": 10000
+    },
+    
+    "vacf_out": {
+      "interval": 10,
+      "start_step": 0,
+      "end_step": 10000
+    },
+    
+    "trajectory_out": {
+      "interval": 10
+    }
+
+  }
+}

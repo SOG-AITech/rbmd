@@ -1,0 +1,5 @@
+order	name	nodes	dcus	dcus_per_node	atoms	replicate	steps	cut_off	r_core	rbl_sample	rbe_sample	accuracy	mpi_grid_expected	local_box_angstrom	case_dir
+1	strong_nodes04_repeat_a	4	16	4	15763896	6x6x6	1000	9	5	30	200	0.0001	4x2x2	135x270x270	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_recheck_4_8_16_20260819/cases/strong_nodes04_repeat_a
+2	strong_nodes04_repeat_b	4	16	4	15763896	6x6x6	1000	9	5	30	200	0.0001	4x2x2	135x270x270	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_recheck_4_8_16_20260819/cases/strong_nodes04_repeat_b
+3	strong_nodes08_repeat_a	8	32	4	15763896	6x6x6	1000	9	5	30	200	0.0001	4x4x2	135x135x270	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_recheck_4_8_16_20260819/cases/strong_nodes08_repeat_a
+4	strong_nodes16_repeat_a	16	64	4	15763896	6x6x6	1000	9	5	30	200	0.0001	4x4x4	135x135x135	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_recheck_4_8_16_20260819/cases/strong_nodes16_repeat_a

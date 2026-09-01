@@ -1,0 +1,8 @@
+add_subdirectory(data_manager)
+if(USE_MPI)
+	add_subdirectory(parallel)
+endif()
+add_subdirectory(reader)
+add_subdirectory(neighbor_list)
+add_subdirectory(force)
+add_subdirectory(simulate_pipeline)

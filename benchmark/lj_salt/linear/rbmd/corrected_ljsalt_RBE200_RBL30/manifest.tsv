@@ -1,0 +1,7 @@
+system	mode	name	gpus	rep	atoms	steps	case_dir
+ljsalt	linear	atoms_03600000	4	3x3x2	3600000	1000	/public/home/acymkxdx47/rbmd/build/new_gyf_test/rbmd_linear_subnode_20260815/corrected_ljsalt_RBE200_RBL30/cases/linear/atoms_03600000
+ljsalt	linear	atoms_07200000	4	3x4x3	7200000	1000	/public/home/acymkxdx47/rbmd/build/new_gyf_test/rbmd_linear_subnode_20260815/corrected_ljsalt_RBE200_RBL30/cases/linear/atoms_07200000
+ljsalt	linear	atoms_14400000	4	4x6x3	14400000	1000	/public/home/acymkxdx47/rbmd/build/new_gyf_test/rbmd_linear_subnode_20260815/corrected_ljsalt_RBE200_RBL30/cases/linear/atoms_14400000
+ljsalt	shared_endpoint	atoms_28000000_gpus_04	4	5x7x4	28000000	1000	/public/home/acymkxdx47/rbmd/build/new_gyf_test/rbmd_linear_subnode_20260815/corrected_ljsalt_RBE200_RBL30/cases/shared_endpoint/atoms_28000000_gpus_04
+ljsalt	strong	gpus_02	2	5x7x4	28000000	1000	/public/home/acymkxdx47/rbmd/build/new_gyf_test/rbmd_linear_subnode_20260815/corrected_ljsalt_RBE200_RBL30/cases/strong/gpus_02
+ljsalt	strong	gpus_01	1	5x7x4	28000000	1000	/public/home/acymkxdx47/rbmd/build/new_gyf_test/rbmd_linear_subnode_20260815/corrected_ljsalt_RBE200_RBL30/cases/strong/gpus_01

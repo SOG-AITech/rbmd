@@ -1,0 +1,10 @@
+{
+  "_comment": "每个参数写一个值 = 固定；写多个值 = 本轮要扫描的参数。下面是一个示例：固定neighbor_type/r_core/nsn/coulomb_type/csn，扫描cut_off的6个取值。改成你这一轮真正要扫的参数即可。",
+
+  "neighbor_type": ["RBL"],
+  "cut_off": [12],
+  "r_core": [6],
+  "neighbor_sample_num": [200],
+  "coulomb_type": ["RBE"],
+  "coulomb_sample_num": [200]
+}

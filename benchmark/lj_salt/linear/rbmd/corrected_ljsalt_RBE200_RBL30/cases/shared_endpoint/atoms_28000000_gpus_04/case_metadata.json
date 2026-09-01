@@ -1,0 +1,18 @@
+{
+  "mode": "shared_endpoint",
+  "name": "atoms_28000000_gpus_04",
+  "gpus": 4,
+  "rep": [
+    5,
+    7,
+    4
+  ],
+  "atoms": 28000000,
+  "system": "ljsalt",
+  "case_dir": "/public/home/acymkxdx47/rbmd/build/new_gyf_test/rbmd_linear_subnode_20260815/corrected_ljsalt_RBE200_RBL30/cases/shared_endpoint/atoms_28000000_gpus_04",
+  "steps": 1000,
+  "required_cut_off": 8.0,
+  "required_r_core": 4.0,
+  "required_rbl_sample": 30,
+  "required_rbe_sample": 200
+}

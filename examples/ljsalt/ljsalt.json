@@ -1,0 +1,65 @@
+{
+  "init_configuration": {
+
+    "read_data": {
+      "file": "lj_salt_20w_v.data",
+      "unit": "LJ", 
+      "atom_style": "charge",  
+      "velocity_type": "GAUSS",
+      "replicate": [5, 5, 4]
+    }
+
+  },
+
+  "hyper_parameters": {
+    "force_field": {
+      "type": "LJ/CUT/COUL/LONG"   // 测试
+    },
+
+    "neighbor": {
+      "type": "RBL", 
+      "cut_off": 5,
+      "r_core": 2.5,
+      "neighbor_sample_num": 100,
+	  "energy_rbl_flag":  "no"   
+    },
+
+   "coulomb": {
+      "type": "RBE", 
+      "coulomb_sample_num": 100,
+      "accuracy": 1.0e-4,
+      "alpha": 0.03,
+      "kmax": [ 2 ,2 ,2],
+      "energy_rbe_flag":  "yes"   
+    },
+   
+    "extend": {
+        "fix_shake": false
+    }
+  },
+
+  "execution": {
+    "ensemble": "NVT",
+	"group": "all",
+	"com_bias": "no",
+	"integration_type" :"vv",
+	"par_a": 1.0,
+    "par_b": 3.0,	
+    "temperature":[ 1.0, 1.0, 1 ],   
+    "temp_ctrl_type": "NOSE_HOOVER",
+    "press_ctrl_type": "NOSE_HOOVER",
+    "timestep": 0.001,
+    "num_steps": 3000
+  },
+
+  "outputs": {
+    "thermo_out": { 
+      "interval": 10
+    },
+    "trajectory_out": {
+      "interval": 10
+    }
+
+
+  }
+}

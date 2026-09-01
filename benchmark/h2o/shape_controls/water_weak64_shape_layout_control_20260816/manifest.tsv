@@ -1,0 +1,3 @@
+name	replicate	atoms	nodes	dcus	dcus_per_node	steps	cut_off	r_core	rbl_sample	rbe_sample	mpi_grid_expected	local_replicate_expected	purpose	case_dir
+layout16x4_shape24x12x12	24x12x12	252222336	16	64	4	1000	9	5	30	200	4x4x4	6x3x3	resource-layout control using the legacy box orientation	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_weak64_shape_layout_control_20260816/cases/layout16x4_shape24x12x12
+layout16x4_shape12x12x24	12x12x24	252222336	16	64	4	1000	9	5	30	200	4x4x4	3x3x6	shape-aligned local 3x3x6 domain matching the 32-DCU point	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_weak64_shape_layout_control_20260816/cases/layout16x4_shape12x12x24

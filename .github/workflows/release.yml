@@ -1,0 +1,271 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  # ============ CUDA 10.2 - 老旧 GPU 兼容版 (Kepler ~ Turing) ============
+  cuda-10:
+    runs-on: ubuntu-18.04
+    container:
+      image: nvidia/cuda:10.2-devel-ubuntu18.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y cmake build-essential git pkg-config wget bzip2 libopenmpi-dev openmpi-bin
+
+      - name: Install NCCL
+        run: |
+          apt-get install -y libnccl2=2.8.3-1+cuda10.2 libnccl-dev=2.8.3-1+cuda10.2 || \
+          apt-get install -y libnccl2 libnccl-dev || true
+        
+      - name: Build
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSTATIC_BUILD=ON \
+            -DUSE_CUDA=ON \
+            -DUSE_MPI=ON \
+            -DWARP_SIZE_64=OFF \
+            -DCMAKE_CUDA_ARCHITECTURES="30;35;37;50;52;53;60;61;62;70;72;75"
+          cmake --build build -j$(nproc)
+      
+      - name: Package
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          mkdir -p dist/bin dist/examples
+          cp build/rbmd-gpu dist/bin/
+          cp -r examples/* dist/examples/
+          cp README.md LICENSE dist/ 2>/dev/null || true
+          cat > dist/RUNTIME_REQUIREMENTS.md <<'EOF'
+          This package requires a compatible system OpenMPI runtime.
+          CI release binaries do not bundle MPI libraries and must be run with an OpenMPI runtime matching the release build environment.
+          CUDA builds also require the target system to provide compatible NVIDIA driver and NCCL runtime libraries.
+          EOF
+          tar -czvf rbmd-gpu-${VERSION}-cuda10.2-ubuntu18.04-x64.tar.gz -C dist .
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rbmd-gpu-cuda10.2
+          path: rbmd-gpu-*.tar.gz
+
+  # ============ CUDA 11.8 - 广泛兼容版 (GTX 10 ~ RTX 40 全系列) ============
+  cuda-11:
+    runs-on: ubuntu-20.04
+    container:
+      image: nvidia/cuda:11.8.0-devel-ubuntu20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y cmake build-essential git pkg-config wget bzip2 libopenmpi-dev openmpi-bin
+
+      - name: Install NCCL
+        run: |
+          apt-get install -y libnccl2=2.18.3-1+cuda11.8 libnccl-dev=2.18.3-1+cuda11.8 || \
+          apt-get install -y libnccl2 libnccl-dev
+        
+      - name: Build
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSTATIC_BUILD=ON \
+            -DUSE_CUDA=ON \
+            -DUSE_MPI=ON \
+            -DWARP_SIZE_64=OFF \
+            -DCMAKE_CUDA_ARCHITECTURES="60;70;75;80;86;89"
+          cmake --build build -j$(nproc)
+      
+      - name: Package
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          mkdir -p dist/bin dist/examples
+          cp build/rbmd-gpu dist/bin/
+          cp -r examples/* dist/examples/
+          cp README.md LICENSE dist/ 2>/dev/null || true
+          cat > dist/RUNTIME_REQUIREMENTS.md <<'EOF'
+          This package requires a compatible system OpenMPI runtime.
+          CI release binaries do not bundle MPI libraries and must be run with an OpenMPI runtime matching the release build environment.
+          CUDA builds also require the target system to provide compatible NVIDIA driver and NCCL runtime libraries.
+          EOF
+          tar -czvf rbmd-gpu-${VERSION}-cuda11.8-ubuntu20.04-x64.tar.gz -C dist .
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rbmd-gpu-cuda11.8
+          path: rbmd-gpu-*.tar.gz
+
+  # ============ CUDA 12.8 - 4090/5090 优化版 ============
+  cuda-12:
+    runs-on: ubuntu-20.04
+    container:
+      image: nvidia/cuda:12.8.0-devel-ubuntu20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y cmake build-essential git pkg-config wget bzip2 libopenmpi-dev openmpi-bin
+
+      - name: Install NCCL
+        run: |
+          apt-get install -y libnccl2 libnccl-dev || true
+        
+      - name: Build
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSTATIC_BUILD=ON \
+            -DUSE_CUDA=ON \
+            -DUSE_MPI=ON \
+            -DWARP_SIZE_64=OFF \
+            -DCMAKE_CUDA_ARCHITECTURES="89;90;120"
+          cmake --build build -j$(nproc)
+      
+      - name: Package
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          mkdir -p dist/bin dist/examples
+          cp build/rbmd-gpu dist/bin/
+          cp -r examples/* dist/examples/
+          cp README.md LICENSE dist/ 2>/dev/null || true
+          cat > dist/RUNTIME_REQUIREMENTS.md <<'EOF'
+          This package requires a compatible system OpenMPI runtime.
+          CI release binaries do not bundle MPI libraries and must be run with an OpenMPI runtime matching the release build environment.
+          CUDA builds also require the target system to provide compatible NVIDIA driver and NCCL runtime libraries.
+          EOF
+          tar -czvf rbmd-gpu-${VERSION}-cuda12.8-ubuntu20.04-x64.tar.gz -C dist .
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rbmd-gpu-cuda12.8
+          path: rbmd-gpu-*.tar.gz
+
+  # ============ ROCm 6.2 - AMD 通用版 (RX 6000/7000) ============
+  rocm:
+    runs-on: ubuntu-20.04
+    container:
+      image: rocm/dev-ubuntu-20.04:6.2.4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y cmake build-essential git pkg-config wget bzip2 rocm-dev rccl libopenmpi-dev openmpi-bin
+        
+      - name: Build
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSTATIC_BUILD=ON \
+            -DUSE_ROCM=ON \
+            -DUSE_MPI=ON \
+            -DWARP_SIZE_64=OFF \
+            -DGPU_TARGETS="gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"
+          cmake --build build -j$(nproc)
+      
+      - name: Package
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          mkdir -p dist/bin dist/examples
+          cp build/rbmd-gpu dist/bin/
+          cp -r examples/* dist/examples/
+          cp README.md LICENSE dist/ 2>/dev/null || true
+          cat > dist/RUNTIME_REQUIREMENTS.md <<'EOF'
+          This package requires a compatible system OpenMPI runtime.
+          CI release binaries do not bundle MPI libraries and must be run with an OpenMPI runtime matching the release build environment.
+          ROCm builds also require the target system to provide compatible ROCm and RCCL runtime libraries.
+          EOF
+          tar -czvf rbmd-gpu-${VERSION}-rocm6.2-ubuntu20.04-x64.tar.gz -C dist .
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rbmd-gpu-rocm6.2
+          path: rbmd-gpu-*.tar.gz
+
+  # ============ ROCm 6.2 Warp64 - DCU/部分AMD (64-wide wavefront) ============
+  rocm-warp64:
+    runs-on: ubuntu-20.04
+    container:
+      image: rocm/dev-ubuntu-20.04:6.2.4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y cmake build-essential git pkg-config wget bzip2 rocm-dev rccl libopenmpi-dev openmpi-bin
+        
+      - name: Build
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSTATIC_BUILD=ON \
+            -DUSE_ROCM=ON \
+            -DUSE_MPI=ON \
+            -DWARP_SIZE_64=ON \
+            -DGPU_TARGETS="gfx1030;gfx1031;gfx1032;gfx1100;gfx1101;gfx1102"
+          cmake --build build -j$(nproc)
+      
+      - name: Package
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          mkdir -p dist/bin dist/examples
+          cp build/rbmd-gpu dist/bin/
+          cp -r examples/* dist/examples/
+          cp README.md LICENSE dist/ 2>/dev/null || true
+          cat > dist/RUNTIME_REQUIREMENTS.md <<'EOF'
+          This package requires a compatible system OpenMPI runtime.
+          CI release binaries do not bundle MPI libraries and must be run with an OpenMPI runtime matching the release build environment.
+          ROCm builds also require the target system to provide compatible ROCm and RCCL runtime libraries.
+          EOF
+          tar -czvf rbmd-gpu-${VERSION}-rocm6.2-warp64-ubuntu20.04-x64.tar.gz -C dist .
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rbmd-gpu-rocm6.2-warp64
+          path: rbmd-gpu-*.tar.gz
+
+  # ============ 发布 Release ============
+  release:
+    needs: [cuda-10, cuda-11, cuda-12, rocm, rocm-warp64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+      
+      - name: List files
+        run: ls -la
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            rbmd-gpu-cuda10.2/*.tar.gz
+            rbmd-gpu-cuda11.8/*.tar.gz
+            rbmd-gpu-cuda12.8/*.tar.gz
+            rbmd-gpu-rocm6.2/*.tar.gz
+            rbmd-gpu-rocm6.2-warp64/*.tar.gz
+          generate_release_notes: true

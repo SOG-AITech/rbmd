@@ -1,0 +1,22 @@
+{
+  "created": "2026-08-16",
+  "purpose": "Complete Water weak scaling with a fixed 3x3x6 local-domain orientation",
+  "submission_policy": "Two new cases only, sequential, free partition, no exclusive",
+  "reused_points": {
+    "32_dcu": {
+      "replicate": "12x12x12",
+      "local_domain": "3x3x6",
+      "short": 0.192161,
+      "long": 0.026236,
+      "short_plus_long": 0.218397
+    },
+    "64_dcu": {
+      "source_job": "748082",
+      "replicate": "12x12x24",
+      "local_domain": "3x3x6",
+      "short": 0.192203,
+      "long": 0.026577,
+      "short_plus_long": 0.21878
+    }
+  }
+}
