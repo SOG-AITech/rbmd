@@ -6,6 +6,10 @@ Molecular dynamics software with multi-device support, fully GPU-resident parall
 
 RBMD is a GPU-accelerated molecular dynamics package for heterogeneous and high-performance computing systems. It supports NVIDIA CUDA and AMD ROCm/DCU devices, MPI-based multi-GPU execution, and optional NCCL/RCCL collective communication.
 
+## Preprints
+
+For the manuscript of RBMD 2.0, see, [RBMD 2.0: Random batch molecular dynamics package for large-scale simulations on multi-GPU architectures](https://arxiv.org/abs/2609.02694)
+
 ## Highlights
 
 - Random Batch Method algorithms for short- and long-range interactions, including RBL, RBE, and RBSOG.
