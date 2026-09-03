@@ -17,8 +17,7 @@ build-*/
 
 # Large datasets and generated trajectories are distributed separately.
 benchmark/data/*.data
-benchmark/h2o/rdf/rdf_compare_final_100k_20260731/equi_bulk.4000000.data
-examples/ljsalt/lj_salt_20w_v.data
+rbmd-data-*.tar.gz
 *.trj
 *.traj
 *.lammpstrj

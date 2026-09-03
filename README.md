@@ -47,21 +47,21 @@ The `benchmark/` directory contains curated configurations, Slurm submission scr
 | LJ-salt | [`benchmark/lj_salt`](benchmark/lj_salt) | `benchmark/lj_salt/workbook/run_LJ_salt.xlsx` |
 | PEO-LiTFSI | [`benchmark/peo_litfsi`](benchmark/peo_litfsi) | `benchmark/peo_litfsi/workbook/run_PEO.xlsx` |
 
-Large benchmark and example inputs are distributed as a single
-[`rbmd-data-v1.tar.gz`](https://github.com/SOG-AITech/rbmd/releases/download/benchmark-data-v1/rbmd-data-v1.tar.gz)
+The four publication input systems are distributed as a single
+[`rbmd-data-v2.tar.gz`](https://github.com/qizhou1729/rbmd/releases/download/benchmark-data-v2/rbmd-data-v2.tar.gz)
 Release asset rather than stored in Git. Download and extract it from the
 repository root:
 
 ```bash
-curl -L https://github.com/SOG-AITech/rbmd/releases/download/benchmark-data-v1/rbmd-data-v1.tar.gz \
-  -o rbmd-data-v1.tar.gz
-tar -xzf rbmd-data-v1.tar.gz
+curl -L https://github.com/qizhou1729/rbmd/releases/download/benchmark-data-v2/rbmd-data-v2.tar.gz \
+  -o rbmd-data-v2.tar.gz
+tar -xzf rbmd-data-v2.tar.gz
 ```
 
-The archive installs the three shared benchmark inputs, the H2O RDF input, and
-the large LJ-salt example input at the paths expected by the retained
-configurations. See [`benchmark/data/README.md`](benchmark/data/README.md) for
-the complete file list.
+The archive installs the three shared benchmark inputs and the equilibrated H2O
+RDF seed at the canonical paths used by the retained configurations. See
+[`benchmark/data/README.md`](benchmark/data/README.md) for the exact file list,
+system definitions, and checksums.
 
 A supercomputer is not needed to read the benchmark configurations or build RBMD. Reproducing the published multi-device scaling runs does require an HPC environment with the corresponding number of GPUs/DCUs, MPI, and a Slurm-compatible scheduler. Partition names, module versions, device requests, and launcher options in the archived submission scripts are site-specific and must be adapted to the target cluster.
 
