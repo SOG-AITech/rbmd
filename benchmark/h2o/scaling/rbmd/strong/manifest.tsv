@@ -1,0 +1,6 @@
+case_id	atoms	replicate	nodes	dcus	mpi_grid	allocation	steps	dt_fs	short_range_s_per_step	long_range_s_per_step	short_plus_long_s_per_step	job_id	job_state	source_path
+dcu_04	15763896	6x6x6	1	4	2x2x1	exclusive	1000	0.5	0.040622	0.025682	0.066304	795533	COMPLETED	/public/home/acymkxdx47/tmp_rbmd_h2o_scaling_pbc_only_1f34_9_5p5_n50_p200_20260830/strong/cases/nodes_01_buildsync_20260831
+dcu_08	15763896	6x6x6	2	8	2x2x2	exclusive	1000	0.5	0.020709	0.013967	0.034676	795534	COMPLETED	/public/home/acymkxdx47/tmp_rbmd_h2o_scaling_pbc_only_1f34_9_5p5_n50_p200_20260830/strong/cases/nodes_02_buildsync_20260831
+dcu_16	15763896	6x6x6	4	16	4x2x2	exclusive	1000	0.5	0.010727	0.008442	0.019169	795535	COMPLETED	/public/home/acymkxdx47/tmp_rbmd_h2o_scaling_pbc_only_1f34_9_5p5_n50_p200_20260830/strong/cases/nodes_04_buildsync_20260831
+dcu_32	15763896	6x6x6	8	32	4x4x2	exclusive	1000	0.5	0.005637	0.005299	0.010936	795536	COMPLETED	/public/home/acymkxdx47/tmp_rbmd_h2o_scaling_pbc_only_1f34_9_5p5_n50_p200_20260830/strong/cases/nodes_08_buildsync_20260831
+dcu_64	15763896	6x6x6	16	64	4x4x4	shared	1000	0.5	0.003289	0.003919	0.007208	795608	COMPLETED	/public/home/acymkxdx47/tmp_rbmd_h2o_scaling_pbc_only_1f34_9_5p5_n50_p200_20260830/strong/cases/nodes_16_buildsync_shared_restore_20260831

@@ -1,7 +1,0 @@
-order	method	name	nodes	dcus	atoms	replicate	steps	processor_grid	local_replica_ratio	case_dir
-1	LAMMPS-Kokkos-KISS	lammps_16dcu_grid4x2x2	4	16	15763896	6x6x6	1000	4x2x2	1.5x3x3	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/lammps_16dcu_grid4x2x2
-2	RBMD	rbmd_16dcu_grid4x2x2	4	16	15763896	6x6x6	1000	4x2x2	1.5x3x3	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/rbmd_16dcu_grid4x2x2
-3	LAMMPS-Kokkos-KISS	lammps_32dcu_grid4x4x2	8	32	15763896	6x6x6	1000	4x4x2	1.5x1.5x3	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/lammps_32dcu_grid4x4x2
-4	RBMD	rbmd_32dcu_grid4x4x2	8	32	15763896	6x6x6	1000	4x4x2	1.5x1.5x3	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/rbmd_32dcu_grid4x4x2
-5	LAMMPS-Kokkos-KISS	lammps_64dcu_grid4x4x4	16	64	15763896	6x6x6	1000	4x4x4	1.5x1.5x1.5	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/lammps_64dcu_grid4x4x4
-6	RBMD	rbmd_64dcu_grid4x4x4	16	64	15763896	6x6x6	1000	4x4x4	1.5x1.5x1.5	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_kiss_matched_recheck_20260820/cases/rbmd_64dcu_grid4x4x4

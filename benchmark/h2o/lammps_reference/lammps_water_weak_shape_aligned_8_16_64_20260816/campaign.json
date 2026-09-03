@@ -1,6 +1,0 @@
-{
-  "created": "2026-08-16",
-  "purpose": "LAMMPS Water weak-scaling reruns matching the RBMD 3x3x6 local-domain orientation",
-  "submission_policy": "Three cases only, sequential, free partition, no exclusive",
-  "method": "LAMMPS KOKKOS PPPM 1e-4, cutoff 9/9, newton off, timer full sync, HIP_LAUNCH_BLOCKING=1"
-}

@@ -1,7 +1,0 @@
-label	system	mode	nodes	gpus	atoms	rx	ry	rz	case_dir
-water_strong_dcu01	water	strong	1	1	15763896	6	6	6	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_water9_complete64_noexclusive_20260814/water/strong/node_01_dcu_01
-water_strong_dcu02	water	strong	1	2	15763896	6	6	6	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_water9_complete64_noexclusive_20260814/water/strong/node_01_dcu_02
-water_weak_dcu01	water	weak	1	1	3940974	6	3	3	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_water9_complete64_noexclusive_20260814/water/weak/node_01_dcu_01
-water_weak_dcu02	water	weak	1	2	7881948	6	6	3	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_water9_complete64_noexclusive_20260814/water/weak/node_01_dcu_02
-water_strong_n08	water	strong	8	32	15763896	6	6	6	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_water9_complete64_noexclusive_20260814/water/strong/nodes_08
-water_weak_n08	water	weak	8	32	126111168	12	12	12	/public/home/acymkxdx47/rbmd/build/lammps_kokkos_pppm_water9_complete64_noexclusive_20260814/water/weak/nodes_08

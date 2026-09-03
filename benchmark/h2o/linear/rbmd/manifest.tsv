@@ -1,0 +1,7 @@
+case_id	atoms	replicate	nodes	dcus	mpi_grid	steps	dt_fs	short_range_s_per_step	long_range_s_per_step	short_plus_long_s_per_step	job_id	job_state	source_path
+atoms_00583848	583848	2x2x2	1	4	2x2x1	1000	0.5	0.002188	0.002671	0.004859	795563	COMPLETED	/public/home/acymkxdx47/tmp_rbmd_h2o_linear_pbc_only_1f34_9_5p5_n50_p200_20260830/cases_buildsync_rerun_20260831/atoms_00583848
+atoms_01313658	1313658	3x3x2	1	4	2x2x1	1000	0.5	0.003992	0.003815	0.007807	795564	COMPLETED	/public/home/acymkxdx47/tmp_rbmd_h2o_linear_pbc_only_1f34_9_5p5_n50_p200_20260830/cases_buildsync_rerun_20260831/atoms_01313658
+atoms_01970487	1970487	3x3x3	1	4	2x2x1	1000	0.5	0.005555	0.004717	0.010272	795565	COMPLETED	/public/home/acymkxdx47/tmp_rbmd_h2o_linear_pbc_only_1f34_9_5p5_n50_p200_20260830/cases_buildsync_rerun_20260831/atoms_01970487
+atoms_03940974	3940974	3x6x3	1	4	2x2x1	1000	0.5	0.010648	0.007809	0.018457	795566	COMPLETED	/public/home/acymkxdx47/tmp_rbmd_h2o_linear_pbc_only_1f34_9_5p5_n50_p200_20260830/cases_buildsync_rerun_20260831/atoms_03940974
+atoms_07881948	7881948	6x6x3	1	4	2x2x1	1000	0.5	0.020744	0.013749	0.034493	795567	COMPLETED	/public/home/acymkxdx47/tmp_rbmd_h2o_linear_pbc_only_1f34_9_5p5_n50_p200_20260830/cases_buildsync_rerun_20260831/atoms_07881948
+atoms_15763896	15763896	6x6x6	1	4	2x2x1	1000	0.5	0.040630	0.025655	0.066285	795568	COMPLETED	/public/home/acymkxdx47/tmp_rbmd_h2o_linear_pbc_only_1f34_9_5p5_n50_p200_20260830/cases_buildsync_rerun_20260831/atoms_15763896

@@ -1,0 +1,3 @@
+method	job_id	job_state	steps	dt_fs	short_range	long_range	accuracy	rdf_bins	bin_width_A	source_path
+RBMD	791800	COMPLETED	20000	0.5	RBL_9.0_5.5_n50	RBE_p200	1e-4	150	0.06	/public/home/acymkxdx47/tmp_RBMD_Clean_open_source_20k_rbe200_20260829/benchmark/h2o/rdf/rdf_20k_aligned_RBL_upper_rbe200_rc5p5_n50_20260830
+LAMMPS-Kokkos	792061	COMPLETED	20000	0.5	cutoff_9.0	PPPM	1e-4	150	0.06	/public/home/acymkxdx47/tmp_rdf/lammps_20k_dt0p5_allpairs_20260830
