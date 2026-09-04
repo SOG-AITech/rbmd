@@ -1,7 +1,0 @@
-name	atoms	replicate	nodes	dcus	steps	cut_off	r_core	rbl_sample	rbe_sample	mpi_grid	local_shape_units	case_dir
-atoms_00583848	583848	2x2x2	1	4	1000	9	5	30	200	2x2x1	1x1x2	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_linear_same_sizes_shape_control_20260818/cases/atoms_00583848
-atoms_01313658	1313658	3x3x2	1	4	1000	9	5	30	200	2x2x1	1.5x1.5x2	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_linear_same_sizes_shape_control_20260818/cases/atoms_01313658
-atoms_01970487	1970487	3x3x3	1	4	1000	9	5	30	200	2x2x1	1.5x1.5x3	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_linear_same_sizes_shape_control_20260818/cases/atoms_01970487
-atoms_03940974	3940974	3x6x3	1	4	1000	9	5	30	200	2x2x1	1.5x3x3	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_linear_same_sizes_shape_control_20260818/cases/atoms_03940974
-atoms_07881948	7881948	6x6x3	1	4	1000	9	5	30	200	2x2x1	3x3x3	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_linear_same_sizes_shape_control_20260818/cases/atoms_07881948
-atoms_15763896	15763896	6x6x6	1	4	1000	9	5	30	200	2x2x1	3x3x6	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_linear_same_sizes_shape_control_20260818/cases/atoms_15763896

@@ -2,7 +2,7 @@
   "init_configuration": {
 
     "read_data": {
-      "file": "lj_salt_20w_v.data",
+      "file": "../../benchmark/data/lj_salt.data",
       "unit": "LJ", 
       "atom_style": "charge",  
       "velocity_type": "GAUSS",
@@ -13,7 +13,7 @@
 
   "hyper_parameters": {
     "force_field": {
-      "type": "LJ/CUT/COUL/LONG"   // 测试
+      "type": "LJ/CUT/COUL/LONG"
     },
 
     "neighbor": {

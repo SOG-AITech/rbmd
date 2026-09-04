@@ -1,7 +1,0 @@
-order	name	case_dir	method	grid_label	processor_grid	nodes	dcus	atoms	replicate	steps
-1	rbmd_control_4x2x2	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_grid_topology_4nodes_20260819/cases/rbmd_control_4x2x2	RBMD	control	4x2x2	4	16	15763896	6x6x6	1000
-2	lammps_control_4x2x2	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_grid_topology_4nodes_20260819/cases/lammps_control_4x2x2	LAMMPS-Kokkos	control	4x2x2	4	16	15763896	6x6x6	1000
-3	rbmd_alt_y_2x4x2	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_grid_topology_4nodes_20260819/cases/rbmd_alt_y_2x4x2	RBMD	alt_y	2x4x2	4	16	15763896	6x6x6	1000
-4	lammps_alt_y_2x4x2	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_grid_topology_4nodes_20260819/cases/lammps_alt_y_2x4x2	LAMMPS-Kokkos	alt_y	2x4x2	4	16	15763896	6x6x6	1000
-5	rbmd_alt_z_2x2x4	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_grid_topology_4nodes_20260819/cases/rbmd_alt_z_2x2x4	RBMD	alt_z	2x2x4	4	16	15763896	6x6x6	1000
-6	lammps_alt_z_2x2x4	/public/home/acymkxdx47/rbmd/build/new_gyf_test/water_strong_grid_topology_4nodes_20260819/cases/lammps_alt_z_2x2x4	LAMMPS-Kokkos	alt_z	2x2x4	4	16	15763896	6x6x6	1000

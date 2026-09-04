@@ -1,7 +1,8 @@
 # LJ-salt example data
 
-The large `lj_salt_20w_v.data` input is distributed separately and is not
-committed to the Git repository. It is included in the single
-[`rbmd-data-v1.tar.gz`](https://github.com/SOG-AITech/rbmd/releases/download/benchmark-data-v1/rbmd-data-v1.tar.gz)
-Release asset. Extract that archive from the repository root before running
-`ljsalt.json` or `run.slurm`; the file will be installed in this directory.
+This example reuses the canonical 200,000-atom LJ electrolyte input at
+`benchmark/data/lj_salt.data` and replicates it 5 x 5 x 4 in the configuration.
+The input is included in
+[`rbmd-data-v2.tar.gz`](https://github.com/qizhou1729/rbmd/releases/download/benchmark-data-v2/rbmd-data-v2.tar.gz).
+Extract the archive from the repository root before running `ljsalt.json` or
+`run.slurm`.

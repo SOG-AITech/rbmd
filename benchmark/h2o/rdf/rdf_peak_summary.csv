@@ -1,0 +1,4 @@
+pair,bins,bin_width_A,lammps_peak_r_A,lammps_peak_g,rbmd_peak_r_A,rbmd_peak_g,peak_position_difference_A,peak_height_relative_difference_pct,rmse,max_absolute_difference
+O-O,150,0.06,2.73,3.035790,2.73,3.114280,0.00,2.585488,0.013382874,0.086950
+O-H,150,0.06,1.77,1.598880,1.77,1.630850,0.00,1.999525,0.006704705,0.045470
+H-H,150,0.06,2.37,1.350280,2.37,1.367210,0.00,1.253814,0.003438289,0.016930
