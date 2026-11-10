@@ -38,19 +38,15 @@ protected:
     int header_channel{0};
     int payload_channel{1};
 
-    int HeaderTag(unsigned short d, Phase phase, uint32_t epoch,
-                  int receive_side) const {
+    int HeaderTag(unsigned short d, Phase phase, uint32_t epoch) const {
       return base + static_cast<int>(d) * stride_dim +
-             static_cast<int>(phase) * stride_phase + 2 * header_channel +
-             receive_side +
+             static_cast<int>(phase) * stride_phase + header_channel +
              static_cast<int>(epoch % 2) * stride_dim * stride_phase;
     }
 
-    int PayloadTag(unsigned short d, Phase phase, uint32_t epoch,
-                   int receive_side) const {
+    int PayloadTag(unsigned short d, Phase phase, uint32_t epoch) const {
       return base + static_cast<int>(d) * stride_dim +
-             static_cast<int>(phase) * stride_phase + 2 * payload_channel +
-             receive_side +
+             static_cast<int>(phase) * stride_phase + payload_channel +
              static_cast<int>(epoch % 2) * stride_dim * stride_phase;
     }
   };
@@ -97,7 +93,6 @@ protected:
 
   struct PendingForwardPeer {
     int rank{-1};
-    int receive_side{-1};
     std::vector<rbmd::Id> send_ids{};
     std::vector<rbmd::Id> recv_ids{};
     std::vector<rbmd::Real> shift_x{};
@@ -114,7 +109,6 @@ protected:
 
   struct ForwardPeer {
     int rank{-1};
-    int receive_side{-1};
     thrust::device_vector<rbmd::Id> send_indices{};
     thrust::device_vector<rbmd::Id> recv_indices{};
     thrust::device_vector<rbmd::Real> shift_x{};

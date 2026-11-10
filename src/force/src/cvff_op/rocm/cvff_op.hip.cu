@@ -3,6 +3,12 @@
 #include "../common/rbmd_define.h"
 #include "cvff_op.h"
 #include "model/box.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
 #include "../lj_cut_coul_kspace_op/rocm/lj_cut_coul_kspace_op.hip.cu"
 
 const rbmd::Real SMALL = 0.001;
@@ -512,6 +518,272 @@ __global__ void ComputeSpecialLJCutCoulRBLForce(
     fz[tid1] = sum_fz;
   }
 }
+
+// PairOpt v1 keeps the original kernel above as an executable reference.
+// Cache only topology data: neither neighbor order nor sampling is changed.
+struct PairOptSpecialCache {
+  const rbmd::Id* row;
+  rbmd::Id first_id;
+  rbmd::Id second_id;
+  rbmd::Real first_weight;
+  rbmd::Real second_weight;
+  int n12;
+  int n13;
+  int count;
+};
+
+inline __device__ PairOptSpecialCache LoadPairOptSpecialCache(
+    unsigned int tid1, const int* nspecial, const rbmd::Id* special,
+    int maxspecial, rbmd::Real w12, rbmd::Real w13, rbmd::Real w14) {
+  PairOptSpecialCache cache{};
+  LoadSpecialCounts(tid1, nspecial, maxspecial, cache.n12, cache.n13,
+                    cache.count);
+  if (!special || maxspecial <= 0 || cache.count <= 0) {
+    cache.count = 0;
+    return cache;
+  }
+  cache.row = special + static_cast<long long>(tid1) *
+                            static_cast<long long>(maxspecial);
+  if (cache.count > 0) {
+    cache.first_id = cache.row[0];
+    cache.first_weight = (0 < cache.n12) ? w12 : ((0 < cache.n13) ? w13 : w14);
+  }
+  if (cache.count > 1) {
+    cache.second_id = cache.row[1];
+    cache.second_weight = (1 < cache.n12) ? w12 : ((1 < cache.n13) ? w13 : w14);
+  }
+  return cache;
+}
+
+inline __device__ rbmd::Real LookupPairOptSpecialWeight(
+    const PairOptSpecialCache& cache, rbmd::Id gid2, rbmd::Real w12,
+    rbmd::Real w13, rbmd::Real w14) {
+  // First-match semantics also hold for unusual rows containing duplicates.
+  if (cache.count > 0 && cache.first_id == gid2) return cache.first_weight;
+  if (cache.count > 1 && cache.second_id == gid2) return cache.second_weight;
+  for (int k = 2; k < cache.count; ++k) {
+    if (cache.row[k] == gid2) {
+      return (k < cache.n12) ? w12 : ((k < cache.n13) ? w13 : w14);
+    }
+  }
+  return rbmd::Real(1);
+}
+
+inline __device__ rbmd::Real PairOptForceCoefficient(
+    rbmd::Real distance_2, rbmd::Real lower_cutoff_2,
+    rbmd::Real upper_cutoff_2, rbmd::Real multiplier,
+    rbmd::Real alpha, rbmd::Real sqrt_alpha,
+    rbmd::Real gaussian_prefactor, rbmd::Real negative_charge_product,
+    rbmd::Real weight, rbmd::Real lj_force12, rbmd::Real lj_force6) {
+  if (distance_2 <= lower_cutoff_2 || distance_2 >= upper_cutoff_2) {
+    return rbmd::Real(0);
+  }
+  const rbmd::Real r = SQRT(distance_2);
+  const rbmd::Real r2inv = rbmd::Real(1) / distance_2;
+  const rbmd::Real rinv = rbmd::Real(1) / r;
+  const rbmd::Real r6inv = r2inv * r2inv * r2inv;
+  const rbmd::Real force_lj =
+      -multiplier * r2inv * r6inv * (lj_force12 * r6inv - lj_force6);
+  // Keep erf-based screening, precision-specific math, and the original cutoffs.
+  const rbmd::Real screening =
+      (rbmd::Real(1) - ERF(sqrt_alpha * r)) * r2inv +
+      gaussian_prefactor * EXP(-alpha * distance_2) * rinv;
+  const rbmd::Real force_coul =
+      multiplier * negative_charge_product * screening * rinv;
+  // The full Coulomb special correction is NOT scaled by the shell multiplier.
+  // r^3 uses the already available squared distance rather than a pow call.
+  const rbmd::Real full_coul = negative_charge_product / (distance_2 * r);
+  const rbmd::Real corrected_coul =
+      force_coul - (rbmd::Real(1) - weight) * full_coul;
+  return weight * force_lj + corrected_coul;
+}
+
+__global__ void ComputeSpecialLJCutCoulRBLForcePairOptV1(
+    Box box, const rbmd::Real rs, const rbmd::Real rc,
+    const rbmd::Id num_atoms, const rbmd::Id neighbor_sample_num,
+    const rbmd::Id pice_num, const rbmd::Real alpha, const rbmd::Real qqr2e,
+    const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
+    const rbmd::Id lj_num_types, const rbmd::Real* lj_force12,
+    const rbmd::Real* lj_force6, const rbmd::Id* start_id,
+    const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
+    const rbmd::Id* id_random_neighbor, const rbmd::Id* random_neighbor_num,
+    const int* nspecial, const rbmd::Id* special, int maxspecial,
+    rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
+    const rbmd::Real* charge, const rbmd::Real* px, const rbmd::Real* py,
+    const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz) {
+  const unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
+  if (tid1 >= num_atoms) return;
+  const PairOptSpecialCache specials = LoadPairOptSpecialCache(
+      tid1, nspecial, special, maxspecial, w12, w13, w14);
+  const rbmd::Id type_offset = atoms_type[tid1] * lj_num_types;
+  const rbmd::Real negative_charge_i = -qqr2e * charge[tid1];
+  const rbmd::Real x1 = px[tid1];
+  const rbmd::Real y1 = py[tid1];
+  const rbmd::Real z1 = pz[tid1];
+  const rbmd::Real rs2 = rs * rs;
+  const rbmd::Real rc2 = rc * rc;
+  const rbmd::Real sqrt_alpha = SQRT(alpha);
+  const rbmd::Real gaussian_prefactor =
+      rbmd::Real(2) * sqrt_alpha / SQRT(rbmd::Real(RBMD_PI));
+  rbmd::Real sum_fx = 0;
+  rbmd::Real sum_fy = 0;
+  rbmd::Real sum_fz = 0;
+
+  for (rbmd::Id j = start_id[tid1]; j < end_id[tid1]; ++j) {
+    const rbmd::Id tid2 = id_verletlist[j];
+    if (tid2 == static_cast<rbmd::Id>(tid1)) continue;
+    rbmd::Real dx = px[tid2] - x1;
+    rbmd::Real dy = py[tid2] - y1;
+    rbmd::Real dz = pz[tid2] - z1;
+    MinImageDistance_while(box, dx, dy, dz);
+    const rbmd::Real distance_2 = dx * dx + dy * dy + dz * dz;
+    const rbmd::Id pair_index = type_offset + atoms_type[tid2];
+    const rbmd::Real weight = LookupPairOptSpecialWeight(
+        specials, atoms_id[tid2], w12, w13, w14);
+    const rbmd::Real f = PairOptForceCoefficient(
+        distance_2, rbmd::Real(EPSILON), rs2, rbmd::Real(1), alpha,
+        sqrt_alpha, gaussian_prefactor, negative_charge_i * charge[tid2],
+        weight, lj_force12[pair_index], lj_force6[pair_index]);
+    sum_fx += f * dx;
+    sum_fy += f * dy;
+    sum_fz += f * dz;
+  }
+  const rbmd::Id real_random_num = random_neighbor_num[tid1];
+  for (rbmd::Id jj = 0; jj < real_random_num; ++jj) {
+    const unsigned long random_neighbor_index =
+        static_cast<unsigned long>(jj) * static_cast<unsigned long>(num_atoms) +
+        static_cast<unsigned long>(tid1);
+    const rbmd::Id tid2 = id_random_neighbor[random_neighbor_index];
+    if (tid2 == static_cast<rbmd::Id>(tid1)) continue;
+    rbmd::Real dx = px[tid2] - x1;
+    rbmd::Real dy = py[tid2] - y1;
+    rbmd::Real dz = pz[tid2] - z1;
+    MinImageDistance_while(box, dx, dy, dz);
+    const rbmd::Real distance_2 = dx * dx + dy * dy + dz * dz;
+    const rbmd::Id pair_index = type_offset + atoms_type[tid2];
+    const rbmd::Real weight = LookupPairOptSpecialWeight(
+        specials, atoms_id[tid2], w12, w13, w14);
+    const rbmd::Real f = PairOptForceCoefficient(
+        distance_2, rs2, rc2, static_cast<rbmd::Real>(pice_num), alpha,
+        sqrt_alpha, gaussian_prefactor, negative_charge_i * charge[tid2],
+        weight, lj_force12[pair_index], lj_force6[pair_index]);
+    sum_fx += f * dx;
+    sum_fy += f * dy;
+    sum_fz += f * dz;
+  }
+  fx[tid1] = sum_fx;
+  fy[tid1] = sum_fy;
+  fz[tid1] = sum_fz;
+}
+
+namespace {
+int PairOptRank() {
+#ifdef USE_MPI
+  int initialized = 0;
+  MPI_Initialized(&initialized);
+  int rank = -1;
+  if (initialized) MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  return rank;
+#else
+  return 0;
+#endif
+}
+
+[[noreturn]] void PairOptFail(const char* message) {
+  std::fprintf(stderr, "PAIR_OPT_ERROR rank=%d %s\n", PairOptRank(), message);
+  std::fflush(stderr);
+#ifdef USE_MPI
+  int initialized = 0;
+  MPI_Initialized(&initialized);
+  if (initialized) MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+#endif
+  std::abort();
+}
+
+bool PairOptSelected() {
+  static const bool selected = [] {
+    const char* mode = std::getenv("RBMD_PAIR_KERNEL");
+    if (!mode || std::strcmp(mode, "optimized") == 0) return true;
+    if (std::strcmp(mode, "reference") == 0) return false;
+    PairOptFail("RBMD_PAIR_KERNEL must be reference or optimized");
+  }();
+  return selected;
+}
+
+bool PairOptValidateEnabled() {
+  static const bool enabled = [] {
+    const char* flag = std::getenv("RBMD_PAIR_VALIDATE");
+    return flag && std::strcmp(flag, "1") == 0;
+  }();
+  return enabled;
+}
+
+void PairOptRequireRuntime(ERROR_T error, const char* operation) {
+  if (error != SUCCESS) {
+    std::fprintf(stderr, "PAIR_OPT_RUNTIME operation=%s error=%s\n", operation,
+                 GETERRORSTRING(error));
+    PairOptFail("GPU validation operation failed");
+  }
+}
+
+void PairOptCompareForces(rbmd::Id num_atoms, const rbmd::Real* const reference[3],
+                          const rbmd::Real* const candidate[3]) {
+  const size_t count = static_cast<size_t>(num_atoms);
+  std::vector<rbmd::Real> host_reference(3 * count);
+  std::vector<rbmd::Real> host_candidate(3 * count);
+  for (int axis = 0; axis < 3; ++axis) {
+    PairOptRequireRuntime(MEMCPY(host_reference.data() + axis * count,
+                                 reference[axis], count * sizeof(rbmd::Real), D2H),
+                          "reference D2H");
+    PairOptRequireRuntime(MEMCPY(host_candidate.data() + axis * count,
+                                 candidate[axis], count * sizeof(rbmd::Real), D2H),
+                          "optimized D2H");
+  }
+  double squared_reference = 0;
+  double squared_difference = 0;
+  double max_abs_error = 0;
+  double max_abs_reference = 0;
+  size_t nonfinite = 0;
+  for (size_t i = 0; i < 3 * count; ++i) {
+    const double ref = static_cast<double>(host_reference[i]);
+    const double opt = static_cast<double>(host_candidate[i]);
+    if (!std::isfinite(ref) || !std::isfinite(opt)) {
+      ++nonfinite;
+      continue;
+    }
+    const double difference = opt - ref;
+    squared_reference += ref * ref;
+    squared_difference += difference * difference;
+    max_abs_error = std::max(max_abs_error, std::abs(difference));
+    max_abs_reference = std::max(max_abs_reference, std::abs(ref));
+  }
+  double relative_l2 = std::sqrt(
+      squared_difference / std::max(squared_reference, 1e-300));
+  double normalized_max_error =
+      max_abs_error / std::max(max_abs_reference, 1e-300);
+  bool finite = nonfinite == 0 && std::isfinite(relative_l2) &&
+                std::isfinite(normalized_max_error);
+  // Keep emitted metrics valid JSON even in the nonfinite failure case.
+  if (!std::isfinite(relative_l2)) relative_l2 = 1e300;
+  if (!std::isfinite(normalized_max_error)) normalized_max_error = 1e300;
+  const bool passed = finite && relative_l2 <= 1e-5 &&
+                      normalized_max_error <= 1e-4;
+  std::fprintf(stderr,
+      "PAIR_VALIDATE_JSON={\"rank\":%d,\"num_atoms\":%llu,"
+      "\"comparison\":\"reference_vs_optimized_v1_same_inputs\","
+      "\"finite\":%s,\"nonfinite_components\":%llu,"
+      "\"relative_l2\":%.17g,\"max_abs_error\":%.17g,"
+      "\"max_abs_reference\":%.17g,\"normalized_max_error\":%.17g,"
+      "\"relative_l2_limit\":1e-5,\"normalized_max_limit\":1e-4,"
+      "\"passed\":%s}\n",
+      PairOptRank(), static_cast<unsigned long long>(num_atoms),
+      finite ? "true" : "false", static_cast<unsigned long long>(nonfinite),
+      relative_l2, max_abs_error, max_abs_reference, normalized_max_error,
+      passed ? "true" : "false");
+  std::fflush(stderr);
+  if (!passed) PairOptFail("reference/optimized force comparison failed");
+}
+}  // namespace
 
 //verlet-list : SpecialLJCutCoul Energy
 __global__ void ComputeSpecialLJCutCoulEnergy(
@@ -3716,16 +3988,63 @@ __global__ void ComputeDihedralFourierForcePerAtom(
       rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
       const rbmd::Real* charge, const rbmd::Real* px, const rbmd::Real* py,
       const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz) {
-    unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
-
-    CHECK_KERNEL(
-        ComputeSpecialLJCutCoulRBLForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
-            box, rs, rc, num_atoms, neighbor_sample_num, pice_num,
-            alpha, qqr2e, atoms_type, atoms_id, lj_num_types, lj_force12,
-            lj_force6, start_id, end_id, id_verletlist, id_random_neighbor,
-            random_neighbor_num, nspecial,
-            special, maxspecial, w12, w13, w14, charge, px, py, pz, fx, fy,
-            fz));
+    const unsigned int blocks_per_grid =
+        (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    const bool optimized = PairOptSelected();
+    static bool announced = false;
+    if (!announced) {
+      std::fprintf(stderr,
+          "PAIR_KERNEL_JSON={\"rank\":%d,\"kernel\":\"%s\","
+          "\"variant\":\"pairopt_v1\",\"threads_per_atom\":1,"
+          "\"force_validation\":%s}\n",
+          PairOptRank(), optimized ? "optimized" : "reference",
+          PairOptValidateEnabled() ? "true" : "false");
+      std::fflush(stderr);
+      announced = true;
+    }
+    if (num_atoms <= 0) return;
+    auto launch_pair = [&](bool use_optimized, rbmd::Real* out_x,
+                           rbmd::Real* out_y, rbmd::Real* out_z) {
+      if (use_optimized) {
+        CHECK_KERNEL(
+            ComputeSpecialLJCutCoulRBLForcePairOptV1
+                <<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+                    box, rs, rc, num_atoms, neighbor_sample_num, pice_num, alpha,
+                    qqr2e, atoms_type, atoms_id, lj_num_types, lj_force12,
+                    lj_force6, start_id, end_id, id_verletlist,
+                    id_random_neighbor, random_neighbor_num, nspecial, special,
+                    maxspecial, w12, w13, w14, charge, px, py, pz,
+                    out_x, out_y, out_z));
+      } else {
+        CHECK_KERNEL(
+            ComputeSpecialLJCutCoulRBLForce
+                <<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+                    box, rs, rc, num_atoms, neighbor_sample_num, pice_num, alpha,
+                    qqr2e, atoms_type, atoms_id, lj_num_types, lj_force12,
+                    lj_force6, start_id, end_id, id_verletlist,
+                    id_random_neighbor, random_neighbor_num, nspecial, special,
+                    maxspecial, w12, w13, w14, charge, px, py, pz,
+                    out_x, out_y, out_z));
+      }
+    };
+    launch_pair(optimized, fx, fy, fz);
+    static bool validated = false;
+    if (PairOptValidateEnabled() && !validated) {
+      // Extra memory, copies, and synchronization exist ONLY in validation mode.
+      // The selected kernel's output remains in fx/fy/fz for the simulation.
+      const size_t count = static_cast<size_t>(num_atoms);
+      thrust::device_vector<rbmd::Real> other_forces(3 * count);
+      rbmd::Real* other_x = raw_ptr(other_forces);
+      rbmd::Real* other_y = other_x + count;
+      rbmd::Real* other_z = other_y + count;
+      launch_pair(!optimized, other_x, other_y, other_z);
+      PairOptRequireRuntime(DEVICESYNC(), "force comparison synchronize");
+      const rbmd::Real* selected[3] = {fx, fy, fz};
+      const rbmd::Real* other[3] = {other_x, other_y, other_z};
+      PairOptCompareForces(num_atoms, optimized ? other : selected,
+                           optimized ? selected : other);
+      validated = true;
+    }
   }
 
   //verlet-list:  Energy of special lJ_cut and coul_cut

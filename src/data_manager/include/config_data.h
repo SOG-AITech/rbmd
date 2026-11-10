@@ -1,13 +1,10 @@
 #pragma once
-#include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <experimental/filesystem>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
-#include <type_traits>
 #include <vector>
 
 #include "../common/object.h"
@@ -55,7 +52,6 @@ class ConfigData : public Object {
   template <typename T, typename... Args>
   T Get(std::string key, Args&&... args) {
     nlohmann::ordered_json json_node = _json_node;
-    const std::vector<std::string> path{std::forward<Args>(args)...};
 
     auto getNode = [this, &json_node](const auto& arg) {
       if (json_node.contains(arg) && json_node[arg].is_object()) {
@@ -70,11 +66,7 @@ class ConfigData : public Object {
 
     try {
       if (json_node.contains(key)) {
-        auto value = json_node[key].get<T>();
-        if constexpr (std::is_same_v<T, std::string>) {
-          return NormalizeConfigOption(std::move(value), key, path);
-        }
-        return value;
+        return json_node[key].get<T>();
       } else {
         throw std::runtime_error("no key named: " + key);
       }
@@ -238,63 +230,6 @@ class ConfigData : public Object {
       return NormalizePath(input);
     }
     return NormalizePath(fs::current_path() / input);
-  }
-
-  static std::string NormalizeConfigOption(
-      std::string value, const std::string& key,
-      const std::vector<std::string>& path) {
-    const auto path_is = [&path](std::initializer_list<const char*> expected) {
-      if (path.size() != expected.size()) {
-        return false;
-      }
-      return std::equal(path.begin(), path.end(), expected.begin(),
-                        [](const std::string& lhs, const char* rhs) {
-                          return lhs == rhs;
-                        });
-    };
-    const auto convert_case = [&value](bool uppercase) {
-      std::transform(value.begin(), value.end(), value.begin(),
-                     [uppercase](unsigned char ch) {
-                       return static_cast<char>(uppercase ? std::toupper(ch)
-                                                          : std::tolower(ch));
-                     });
-    };
-
-    if (path_is({"hyper_parameters", "force_field"})) {
-      if (key == "type") {
-        convert_case(true);
-        // Keep the spelling expected by the existing force dispatch tables.
-        if (value == "TERSOFF") {
-          value = "Tersoff";
-        }
-      } else if (key == "dihedral_type" || key == "improper_type") {
-        convert_case(false);
-      }
-    } else if (path_is({"hyper_parameters", "neighbor"})) {
-      if (key == "type") {
-        convert_case(true);
-      } else if (key == "energy_rbl_flag") {
-        convert_case(false);
-      }
-    } else if (path_is({"hyper_parameters", "coulomb"})) {
-      if (key == "type") {
-        convert_case(true);
-      } else if (key == "energy_rbe_flag") {
-        convert_case(false);
-      }
-    } else if (path_is({"init_configuration", "read_data"}) &&
-               key == "atom_style") {
-      convert_case(false);
-    } else if (path_is({"execution"})) {
-      if (key == "ensemble" || key == "temp_ctrl_type" ||
-          key == "press_ctrl_type") {
-        convert_case(true);
-      } else if (key == "integration_type" || key == "com_bias") {
-        convert_case(false);
-      }
-    }
-
-    return value;
   }
 
   /**

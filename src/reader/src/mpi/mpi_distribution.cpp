@@ -467,22 +467,26 @@ void BroadcastDihedralCoefficients(ParsedSnapshot& snapshot, int rank) {
 
   std::vector<rbmd::Id> types(
       static_cast<std::size_t>(std::max<rbmd::Id>(count, 0)));
-  std::vector<rbmd::Real> values(types.size() * 3);
+  std::vector<rbmd::Real> values(types.size() * 7);
 
   if (rank == 0) {
     std::size_t index = 0;
     for (const auto& entry : snapshot.dihedral_coeffs) {
       types[index] = entry.first;
-      values[index * 3] = entry.second.k;
-      values[index * 3 + 1] = entry.second.sign;
-      values[index * 3 + 2] = entry.second.multiplicity;
+      values[index * 7] = entry.second.k;
+      values[index * 7 + 1] = entry.second.sign;
+      values[index * 7 + 2] = entry.second.multiplicity;
+      values[index * 7 + 3] = entry.second.k1;
+      values[index * 7 + 4] = entry.second.k2;
+      values[index * 7 + 5] = entry.second.k3;
+      values[index * 7 + 6] = entry.second.k4;
       ++index;
     }
   }
 
   MPI_Bcast(count > 0 ? types.data() : nullptr, static_cast<int>(count),
             MPI_RBMD_ID, 0, Comm());
-  MPI_Bcast(count > 0 ? values.data() : nullptr, static_cast<int>(count * 3),
+  MPI_Bcast(count > 0 ? values.data() : nullptr, static_cast<int>(count * 7),
             MPI_RBMD_REAL, 0, Comm());
 
   if (rank != 0) {
@@ -491,9 +495,13 @@ void BroadcastDihedralCoefficients(ParsedSnapshot& snapshot, int rank) {
       snapshot.dihedral_coeffs[types[static_cast<std::size_t>(i)]] =
           ParsedSnapshot::DihedralCoeff{
               types[static_cast<std::size_t>(i)],
-              values[static_cast<std::size_t>(i * 3)],
-              values[static_cast<std::size_t>(i * 3 + 1)],
-              values[static_cast<std::size_t>(i * 3 + 2)]};
+              values[static_cast<std::size_t>(i * 7)],
+              values[static_cast<std::size_t>(i * 7 + 1)],
+              values[static_cast<std::size_t>(i * 7 + 2)],
+              values[static_cast<std::size_t>(i * 7 + 3)],
+              values[static_cast<std::size_t>(i * 7 + 4)],
+              values[static_cast<std::size_t>(i * 7 + 5)],
+              values[static_cast<std::size_t>(i * 7 + 6)]};
     }
   }
 }

@@ -1,0 +1,91 @@
+{
+  "name": "lj",
+  "rbmd": {
+    "init_configuration": {
+      "read_data": {
+        "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-lj-szz-extension-20261021/rep1/rbmd/initial.data",
+        "unit": "LJ",
+        "atom_style": "charge",
+        "velocity_type": "NONE",
+        "replicate": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    "hyper_parameters": {
+      "force_field": {
+        "type": "LJ/CUT/COUL/LONG",
+        "mixing_rule": "arithmetic"
+      },
+      "neighbor": {
+        "type": "RBL",
+        "cut_off": 16,
+        "r_core": 8,
+        "neighbor_sample_num": 30,
+        "energy_rbl_flag": "no",
+        "skin": 0.3,
+        "rbl_random_seed": 2026102101
+      },
+      "coulomb": {
+        "type": "RBE",
+        "accuracy": 0.0001,
+        "coulomb_sample_num": 200,
+        "energy_rbe_flag": "no",
+        "rbe_low_modes": false,
+        "random_seed": 2026102101
+      },
+      "extend": {
+        "fix_shake": false
+      }
+    },
+    "execution": {
+      "ensemble": "NVT",
+      "group": "all",
+      "com_bias": "no",
+      "integration_type": "vv",
+      "temperature": [
+        1,
+        1,
+        0.1
+      ],
+      "temp_ctrl_type": "NOSE_HOOVER",
+      "timestep": 0.001,
+      "num_steps": 1000,
+      "diagnostics": {
+        "isolated_timing": false,
+        "forces": false,
+        "energy": false,
+        "thermostat_heat": false,
+        "interval": 1000,
+        "prefix": "revision"
+      }
+    },
+    "outputs": {
+      "thermo_out": {
+        "interval": 1000
+      },
+      "trajectory_out": {
+        "interval": 1000,
+        "mpi_sharded": true
+      }
+    },
+    "analysis_postprocess": {
+      "enabled": false
+    }
+  },
+  "bonded_styles": [],
+  "constraints": [],
+  "rdf_pairs": [
+    1,
+    1,
+    1,
+    2,
+    2,
+    2
+  ],
+  "expected_atoms": 200000,
+  "equilibration_status": "UNVERIFIED: existing snapshot, must record equilibration and independently equilibrated replicates before publication",
+  "notes": "Canonical publication input; provenance is recorded in 08_inputs. Equilibration must be verified for the current force field."
+}

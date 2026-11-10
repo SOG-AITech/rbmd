@@ -1,0 +1,102 @@
+{
+  "name": "water",
+  "rbmd": {
+    "init_configuration": {
+      "read_data": {
+        "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+        "unit": "REAL",
+        "atom_style": "full",
+        "velocity_type": "NONE",
+        "replicate": [
+          1,
+          1,
+          1
+        ],
+        "replicate_bond_periodic": true
+      }
+    },
+    "hyper_parameters": {
+      "force_field": {
+        "type": "CVFF",
+        "mixing_rule": "arithmetic"
+      },
+      "neighbor": {
+        "type": "RBL",
+        "cut_off": 10,
+        "r_core": 6.5,
+        "neighbor_sample_num": 100,
+        "energy_rbl_flag": "no",
+        "skin": 2,
+        "rbl_random_seed": 2026102301
+      },
+      "coulomb": {
+        "type": "RBE",
+        "accuracy": 0.0001,
+        "coulomb_sample_num": 300,
+        "energy_rbe_flag": "no",
+        "rbe_low_modes": false,
+        "random_seed": 2026102301
+      },
+      "extend": {
+        "fix_shake": true,
+        "special_bonds": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "execution": {
+      "ensemble": "NVT",
+      "group": "all",
+      "com_bias": "no",
+      "integration_type": "vv",
+      "temperature": [
+        298,
+        298,
+        10
+      ],
+      "temp_ctrl_type": "NOSE_HOOVER",
+      "timestep": 0.5,
+      "num_steps": 1000,
+      "diagnostics": {
+        "isolated_timing": false,
+        "forces": false,
+        "energy": false,
+        "thermostat_heat": false,
+        "interval": 100,
+        "prefix": "revision"
+      }
+    },
+    "outputs": {
+      "thermo_out": {
+        "interval": 100
+      },
+      "trajectory_out": {
+        "interval": 100,
+        "mpi_sharded": true
+      }
+    },
+    "analysis_postprocess": {
+      "enabled": false
+    }
+  },
+  "bonded_styles": [
+    "bond_style harmonic",
+    "angle_style harmonic"
+  ],
+  "constraints": [
+    "fix water_constraints all shake 1e-6 500 0 b 1 a 1"
+  ],
+  "rdf_pairs": [
+    1,
+    1,
+    1,
+    2,
+    2,
+    2
+  ],
+  "expected_atoms": 72981,
+  "equilibration_status": "UNVERIFIED: existing snapshot, must record equilibration and independently equilibrated replicates before publication",
+  "notes": "Canonical publication input; provenance is recorded in 08_inputs. Equilibration must be verified for the current force field."
+}

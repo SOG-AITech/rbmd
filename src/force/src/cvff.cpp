@@ -1094,9 +1094,6 @@ void CVFF::ComputeLJRBL()
     const auto start = StartDeviceTiming();
     _rbl_list = _rbl_neighbor_list_builder->Build();
     RecordDeviceTiming("Neighbor-List", start);
-#ifdef USE_MPI
-    MPI_Barrier(MPI_COMM_WORLD);
-#endif
 
     // compute force
     const auto start_rbl_force = StartDeviceTiming();

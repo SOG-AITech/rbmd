@@ -1,0 +1,2291 @@
+{
+  "steps": 1000,
+  "warmup": 0,
+  "timing": "synchronous native Pair+Kspace; legacy RBMD num_steps+1 force evaluations",
+  "systems": {
+    "water": {
+      "binary": "/public/home/acymkxdx47/pair_opt_scaling_20261027/software/rbmd",
+      "sha256": "fd02e2e589e29e75bc1235028bc56b27813a49addecf77c7acdd4d59225b8c8c",
+      "preload": "/public/home/acymkxdx47/pair_opt_scaling_20261027/runtime/mpi_probe.so",
+      "preload_sha256": "5ddb910ee4d4742e9a23325e3cdf76d789d565ad13fe4fdfc4983ac626ab21b4",
+      "repeats": 2,
+      "groups": [
+        {
+          "id": "h2o-linear-N583848-G4",
+          "atoms": 583848,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  2,
+                  2,
+                  2
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-linear-N1313658-G4",
+          "atoms": 1313658,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  3,
+                  3,
+                  2
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-linear-N1970487-G4",
+          "atoms": 1970487,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  3,
+                  3,
+                  3
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-linear-N3940974-G4",
+          "atoms": 3940974,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  3,
+                  6,
+                  3
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-linear-N7881948-G4",
+          "atoms": 7881948,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  6,
+                  6,
+                  3
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-strong-N7881948-G4",
+          "atoms": 7881948,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            1,
+            2,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  6,
+                  6,
+                  3
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-strong-N7881948-G8",
+          "atoms": 7881948,
+          "ranks": 8,
+          "nodes": 2,
+          "grid": [
+            4,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  6,
+                  6,
+                  3
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-strong-N7881948-G16",
+          "atoms": 7881948,
+          "ranks": 16,
+          "nodes": 4,
+          "grid": [
+            4,
+            4,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  6,
+                  6,
+                  3
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-strong-N7881948-G32",
+          "atoms": 7881948,
+          "ranks": 32,
+          "nodes": 8,
+          "grid": [
+            4,
+            4,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  6,
+                  6,
+                  3
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-strong-N7881948-G64",
+          "atoms": 7881948,
+          "ranks": 64,
+          "nodes": 16,
+          "grid": [
+            8,
+            4,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  6,
+                  6,
+                  3
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-weak-N15763896-G8",
+          "atoms": 15763896,
+          "ranks": 8,
+          "nodes": 2,
+          "grid": [
+            2,
+            2,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  6,
+                  6,
+                  6
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-weak-N31527792-G16",
+          "atoms": 31527792,
+          "ranks": 16,
+          "nodes": 4,
+          "grid": [
+            4,
+            2,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  12,
+                  6,
+                  6
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-weak-N63055584-G32",
+          "atoms": 63055584,
+          "ranks": 32,
+          "nodes": 8,
+          "grid": [
+            4,
+            4,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  12,
+                  12,
+                  6
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "h2o-weak-N126111168-G64",
+          "atoms": 126111168,
+          "ranks": 64,
+          "nodes": 16,
+          "grid": [
+            4,
+            4,
+            4
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/04-water-rbl100-three-rounds-20261023/initial-rep1.data",
+                "unit": "REAL",
+                "atom_style": "full",
+                "velocity_type": "NONE",
+                "replicate": [
+                  12,
+                  12,
+                  12
+                ],
+                "replicate_bond_periodic": true
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "CVFF",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 10,
+                "r_core": 6.5,
+                "neighbor_sample_num": 100,
+                "energy_rbl_flag": "no",
+                "skin": 2,
+                "rbl_random_seed": 2026102501
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 300,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 2026102501,
+                "debug_alpha": true,
+                "alpha": 0.065776184
+              },
+              "extend": {
+                "fix_shake": true,
+                "special_bonds": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                298,
+                298,
+                10
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.5,
+              "num_steps": 1000,
+              "diagnostics": {
+                "isolated_timing": true,
+                "forces": false,
+                "energy": false,
+                "thermostat_heat": false,
+                "interval": 250,
+                "prefix": "revision"
+              }
+            },
+            "outputs": {
+              "thermo_out": {
+                "interval": 250
+              }
+            },
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        }
+      ]
+    },
+    "lj": {
+      "binary": "/public/home/acymkxdx47/rbmd/build/rbmd",
+      "sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "repeats": 1,
+      "groups": [
+        {
+          "id": "linear-N800000-G4",
+          "atoms": 800000,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  2,
+                  2,
+                  1
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "linear-N1600000-G4",
+          "atoms": 1600000,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  2,
+                  2,
+                  2
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "linear-N3600000-G4",
+          "atoms": 3600000,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  3,
+                  3,
+                  2
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "linear-N7200000-G4",
+          "atoms": 7200000,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  3,
+                  4,
+                  3
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "linear-N14400000-G4",
+          "atoms": 14400000,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  4,
+                  6,
+                  3
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "linear-N21000000-G4",
+          "atoms": 21000000,
+          "ranks": 4,
+          "nodes": 1,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  5,
+                  7,
+                  3
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "strong-N21000000-G8",
+          "atoms": 21000000,
+          "ranks": 8,
+          "nodes": 2,
+          "grid": [
+            2,
+            2,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  5,
+                  7,
+                  3
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "strong-N21000000-G16",
+          "atoms": 21000000,
+          "ranks": 16,
+          "nodes": 4,
+          "grid": [
+            4,
+            2,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  5,
+                  7,
+                  3
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "strong-N21000000-G32",
+          "atoms": 21000000,
+          "ranks": 32,
+          "nodes": 8,
+          "grid": [
+            4,
+            4,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  5,
+                  7,
+                  3
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "strong-N21000000-G64",
+          "atoms": 21000000,
+          "ranks": 64,
+          "nodes": 16,
+          "grid": [
+            4,
+            4,
+            4
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  5,
+                  7,
+                  3
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "weak-N42000000-G8",
+          "atoms": 42000000,
+          "ranks": 8,
+          "nodes": 2,
+          "grid": [
+            2,
+            2,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  5,
+                  7,
+                  6
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "weak-N84000000-G16",
+          "atoms": 84000000,
+          "ranks": 16,
+          "nodes": 4,
+          "grid": [
+            4,
+            2,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  10,
+                  7,
+                  6
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "weak-N168000000-G32",
+          "atoms": 168000000,
+          "ranks": 32,
+          "nodes": 8,
+          "grid": [
+            4,
+            4,
+            2
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  10,
+                  14,
+                  6
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "id": "weak-N336000000-G64",
+          "atoms": 336000000,
+          "ranks": 64,
+          "nodes": 16,
+          "grid": [
+            4,
+            4,
+            4
+          ],
+          "config": {
+            "init_configuration": {
+              "read_data": {
+                "file": "/public/home/acymkxdx47/ReviewRBMD/revision_lj_water_20261015/inputs/L0/snapshot_with_coeffs.data",
+                "unit": "LJ",
+                "atom_style": "charge",
+                "velocity_type": "NONE",
+                "replicate": [
+                  10,
+                  14,
+                  12
+                ]
+              }
+            },
+            "hyper_parameters": {
+              "force_field": {
+                "type": "LJ/CUT/COUL/LONG",
+                "mixing_rule": "arithmetic"
+              },
+              "neighbor": {
+                "type": "RBL",
+                "cut_off": 16.0,
+                "r_core": 8.0,
+                "neighbor_sample_num": 30,
+                "energy_rbl_flag": "no",
+                "skin": 0.3,
+                "rbl_random_seed": 20261018
+              },
+              "coulomb": {
+                "type": "RBE",
+                "accuracy": 0.0001,
+                "coulomb_sample_num": 200,
+                "energy_rbe_flag": "no",
+                "rbe_low_modes": false,
+                "random_seed": 20261018,
+                "debug_alpha": true,
+                "alpha": 0.024285356
+              },
+              "extend": {
+                "fix_shake": false
+              }
+            },
+            "execution": {
+              "ensemble": "NVT",
+              "group": "all",
+              "com_bias": "no",
+              "integration_type": "vv",
+              "temperature": [
+                1,
+                1,
+                0.1
+              ],
+              "temp_ctrl_type": "NOSE_HOOVER",
+              "timestep": 0.001,
+              "num_steps": 1000
+            },
+            "outputs": {},
+            "analysis_postprocess": {
+              "enabled": false
+            }
+          }
+        }
+      ]
+    }
+  }
+}

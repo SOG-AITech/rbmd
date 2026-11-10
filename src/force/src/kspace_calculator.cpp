@@ -262,7 +262,7 @@ void KSpaceCalculator::Init()
         exit(EXIT_FAILURE);
       }
 
-      for (const char* legacy_key : {"alpha", "accuracy", "rbsog_b",
+      for (const char* legacy_key : {"accuracy", "rbsog_b",
                                      "rbsog_sigma", "rbsog_Mmax",
                                      "rbsog_Kcut"}) {
         if (config->PathExists({"hyper_parameters", "coulomb", legacy_key})) {
@@ -292,7 +292,13 @@ void KSpaceCalculator::Init()
       _rbsog_Mmax = preset.mmax;
       _RBE_P = config->Get<rbmd::Id>("coulomb_sample_num", "hyper_parameters", "coulomb"); // This is 'P'
       _rbsog_Kcut = 1;
-      DeriveAlphaFromAccuracy(preset.target_accuracy);
+      if (config->PathExists(
+            {"hyper_parameters", "coulomb", "alpha"})) {
+        SetAlphaFromManual(config->Get<rbmd::Real>(
+          "alpha", "hyper_parameters", "coulomb"));
+      } else {
+        DeriveAlphaFromAccuracy(preset.target_accuracy);
+      }
 
       _RBE_P = ((_RBE_P + 15) / 16) * 16;
 
@@ -317,7 +323,8 @@ void KSpaceCalculator::Init()
       "         rbsog_Mmax : {}\n"
       "         rbsog_Kcut : {}\n"
       "         rbsog_sample_number : {}\n",
-      _coulomb_type, "rbsog_level_auto", raw_level, preset.target_accuracy,
+      _coulomb_type, _manual_alpha_override ? "manual" : "rbsog_level_auto",
+      raw_level, preset.target_accuracy,
       _alpha, _rbsog_b, _rbsog_sigma, _rbsog_Mmax, _rbsog_Kcut, _RBE_P);
     }
     //

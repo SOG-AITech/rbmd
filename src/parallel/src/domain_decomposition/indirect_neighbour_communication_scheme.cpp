@@ -86,50 +86,6 @@ std::vector<T> CopyDeviceBufferColumn(const char* buffer, size_t offset,
 
 constexpr int kMaxForwardFields = 12;
 
-int PartnerReceiveSide(CommunicationPartner& partner, unsigned short d) {
-  if (d >= 3) {
-    throw std::out_of_range("Communication dimension is out of range");
-  }
-  const int offset = partner.getOffset()[d];
-  if (offset < 0) {
-    return 0;
-  }
-  if (offset > 0) {
-    return 1;
-  }
-  throw std::logic_error(
-      "Communication partner has no offset in the active dimension");
-}
-
-int OppositeReceiveSide(int receive_side) { return 1 - receive_side; }
-
-std::vector<CommunicationPartner> SqueezePartnersByDirection(
-    std::vector<CommunicationPartner> partners, unsigned short d) {
-  std::vector<CommunicationPartner> squeezed_partners;
-  std::vector<bool> used(partners.size(), false);
-
-  for (std::size_t i = 0; i < partners.size(); ++i) {
-    if (used[i]) {
-      continue;
-    }
-
-    const int rank = partners[i].getRank();
-    const int receive_side = PartnerReceiveSide(partners[i], d);
-    CommunicationPartner combined = partners[i];
-    for (std::size_t j = i + 1; j < partners.size(); ++j) {
-      if (used[j] || partners[j].getRank() != rank ||
-          PartnerReceiveSide(partners[j], d) != receive_side) {
-        continue;
-      }
-      combined.add(partners[j]);
-      used[j] = true;
-    }
-    squeezed_partners.push_back(combined);
-  }
-
-  return squeezed_partners;
-}
-
 struct ForwardFieldLayout {
   const rbmd::Real* source[kMaxForwardFields]{};
   rbmd::Real* destination[kMaxForwardFields]{};
@@ -960,7 +916,6 @@ void IndirectNeighbourCommunicationScheme::CaptureGhostPhase(
     auto& pending = stage[i];
     auto& partner = neighbours[i];
     pending.rank = partner.getRank();
-    pending.receive_side = PartnerReceiveSide(partner, d);
     if (pending.rank == domainDecomp->_current_rank) {
       continue;
     }
@@ -1145,7 +1100,6 @@ bool IndirectNeighbourCommunicationScheme::PrepareGhostCoordinateExchange(
       }
       ForwardPeer peer;
       peer.rank = pending.rank;
-      peer.receive_side = pending.receive_side;
       std::vector<rbmd::Id> send_indices(pending.send_ids.size());
       for (size_t i = 0; i < pending.send_ids.size(); ++i) {
         if (i >= pending.send_reference_x.size() ||
@@ -1242,8 +1196,7 @@ void IndirectNeighbourCommunicationScheme::ForwardGhostFields(
       MPI_CHECK(MPI_Irecv(thrust::raw_pointer_cast(peer.recv_values.data()),
                           static_cast<int>(peer.recv_values.size()),
                           MPI_RBMD_REAL, peer.rank,
-                          kForwardCoordinateTagBase +
-                              2 * static_cast<int>(d) + peer.receive_side,
+                          kForwardCoordinateTagBase + d,
                           domainDecomp->_mpi_comm, &request));
       requests.push_back(request);
     }
@@ -1291,9 +1244,7 @@ void IndirectNeighbourCommunicationScheme::ForwardGhostFields(
       MPI_CHECK(MPI_Isend(thrust::raw_pointer_cast(peer.send_values.data()),
                           static_cast<int>(peer.send_values.size()),
                           MPI_RBMD_REAL, peer.rank,
-                          kForwardCoordinateTagBase +
-                              2 * static_cast<int>(d) +
-                              OppositeReceiveSide(peer.receive_side),
+                          kForwardCoordinateTagBase + d,
                           domainDecomp->_mpi_comm, &request));
       requests.push_back(request);
     }
@@ -1411,7 +1362,7 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
     MPI_Comm_get_attr(domainDecomp->_mpi_comm, MPI_TAG_UB, &tagUbPtr, &flag);
     if (flag && tagUbPtr != nullptr) {
       const int maxTagCandidate =
-          _tags.PayloadTag(GetCommDims() - 1, Phase::Halo, 1, 1);
+          _tags.PayloadTag(GetCommDims() - 1, Phase::Halo, 1);
       if (maxTagCandidate > *tagUbPtr) {
         std::ostringstream oss;
         oss << "MPI tag 上限不足，所需 tag=" << maxTagCandidate
@@ -1551,8 +1502,8 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
   headerRecvs.reserve(neighbourCount);
   headerSends.reserve(neighbourCount);
 
-  const int headerTag = _tags.HeaderTag(d, phase, _epoch, 0);
-  const int payloadTag = _tags.PayloadTag(d, phase, _epoch, 0);
+  const int headerTag = _tags.HeaderTag(d, phase, _epoch);
+  const int payloadTag = _tags.PayloadTag(d, phase, _epoch);
 
   // === DEBUG: 打印 tag 信息，验证唯一性 ===
   int current_rank = -1;
@@ -1576,11 +1527,9 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
       continue;
     }
     MPI_Request req{};
-    const int receive_side = PartnerReceiveSide(partner, d);
     MPI_Irecv(reinterpret_cast<char*>(&recvHeaders[i]), sizeof(Header),
-              MPI_BYTE, partner.getRank(),
-              _tags.HeaderTag(d, phase, _epoch, receive_side),
-              domainDecomp->_mpi_comm, &req);
+              MPI_BYTE, partner.getRank(), headerTag, domainDecomp->_mpi_comm,
+              &req);
     headerRecvs.push_back(req);
   }
 
@@ -1596,12 +1545,9 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
       continue;
     }
     MPI_Request req{};
-    const int send_side =
-        OppositeReceiveSide(PartnerReceiveSide(partner, d));
     MPI_Isend(reinterpret_cast<char*>(&sendHeaders[i]), sizeof(Header),
-              MPI_BYTE, partner.getRank(),
-              _tags.HeaderTag(d, phase, _epoch, send_side),
-              domainDecomp->_mpi_comm, &req);
+              MPI_BYTE, partner.getRank(), headerTag, domainDecomp->_mpi_comm,
+              &req);
     headerSends.push_back(req);
   }
 
@@ -1640,9 +1586,7 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
     }
     char* recvPtr = partner.GetRecvBufferPtr(msgType);
     MPI_Request req{};
-    const int receive_side = PartnerReceiveSide(partner, d);
-    MPI_Irecv(recvPtr, bytes, MPI_BYTE, partner.getRank(),
-              _tags.PayloadTag(d, phase, _epoch, receive_side),
+    MPI_Irecv(recvPtr, bytes, MPI_BYTE, partner.getRank(), payloadTag,
               domainDecomp->_mpi_comm, &req);
     payloadRecvs.push_back(req);
   }
@@ -1659,10 +1603,7 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
     }
     char* sendPtr = partner.GetSendBufferPtr(msgType);
     MPI_Request req{};
-    const int send_side =
-        OppositeReceiveSide(PartnerReceiveSide(partner, d));
-    MPI_Isend(sendPtr, bytes, MPI_BYTE, partner.getRank(),
-              _tags.PayloadTag(d, phase, _epoch, send_side),
+    MPI_Isend(sendPtr, bytes, MPI_BYTE, partner.getRank(), payloadTag,
               domainDecomp->_mpi_comm, &req);
     payloadSends.push_back(req);
   }
@@ -2253,9 +2194,7 @@ void IndirectNeighbourCommunicationScheme::initCommunicationPartners(
   _fullShellNeighbours = commPartners;
   convert1StageTo3StageNeighbours(commPartners, (*_neighbours), cutoffRadius);
   for (unsigned int d = 0; d < _commDimms; d++) {
-    // Keep opposite periodic sides independent even when both map to one rank.
-    (*_neighbours)[d] =
-        SqueezePartnersByDirection((*_neighbours)[d], d);
+    (*_neighbours)[d] = NeighborAcquirer::squeezePartners((*_neighbours)[d]);
   }
 }
 

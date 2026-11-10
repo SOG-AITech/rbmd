@@ -1,0 +1,11 @@
+{
+  "source": {
+    "sha256": {
+      "src/force/include/force_box_selector.h": "294b1c43482ad1a8b2da252ebc9166673dcf29e14b450812d540da8cb6c7fad2",
+      "src/force/src/kspace_calculator.cpp": "0dd8134f7fcf8d4c3511e3b759bc5cfdf5b3713ab58ae3f0bbfcc18f560e8c3e",
+      "src/force/src/kspace_calculator_op/rocm/kspace_calculator_op.hip.cu": "4b1a2c4a507c63781f5c43d4153a9a550a721477ac14e9154b78a6d1690e951c",
+      "src/parallel/src/rbmd_parallel_until.cpp": "de1f7ab56db6443af24596429395eb5b1e98f9afad48fa501e9871cc62459aa7",
+      "src/parallel/include/rbmd_parallel_until.h": "feb037250b277001e195b11d76b9090c967a832c11b1b49ddf72ac305738d3f2"
+    }
+  }
+}

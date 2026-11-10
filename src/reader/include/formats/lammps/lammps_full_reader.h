@@ -105,7 +105,7 @@ class LammpsFullReader : public StructureReader {
   std::string eam_potential_file_;
   std::multimap<rbmd::Id, rbmd::Id> bond_adjacency_;
   std::array<std::size_t, 3> replicate_factors_{1, 1, 1};
-  bool replicate_bond_periodic_ = false;
+  bool replicate_bond_periodic_ = true;
   bool atom_image_flags_seen_ = false;
   bool atom_image_flags_missing_ = false;
   bool triclinic_box_detected_ = false;
