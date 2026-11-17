@@ -58,6 +58,8 @@ The benchmark inputs are distributed in two releases.
 1. [Original input archive](https://github.com/qizhou1729/rbmd/releases/tag/benchmark-data-v2). Extract `rbmd-data-v2.tar.gz` from the repository root to install the shared water, LJ electrolyte and PEO–LiTFSI inputs and the equilibrated water RDF seed. The 976,200-atom PEO–LiTFSI parent configuration is reused for the revision.
 2. [Revised force-benchmark inputs](https://github.com/SOG-AITech/rbmd/releases/tag/benchmark-lj-200000). This release collects the additional full-box configurations for SPC/E water (72,981, 1,970,487 and 15,763,896 atoms) and LJ electrolyte (200,000, 2,000,000 and 28,000,000 atoms). Each configuration is distributed as a separate gzip file. The filename gives the system and atom count.
 
+The same release includes the [revised numerical results and run records](https://github.com/SOG-AITech/rbmd/releases/download/benchmark-lj-200000/rbmd-revision-results.tar.gz). The archive README indexes force errors, physical observables, timing breakdowns and scaling data. For PEO–LiTFSI, see `Zhengzhou/ReviewRBMD/PEO/accuracy/` for force errors, `Zhengzhou/ReviewRBMD/PEO/timing/` for component timings, and the `Zhengzhou/peo_scaling_*` and `Zhengzhou/peo_weak_*` directories for scaling runs.
+
 A supercomputer is not needed to read the benchmark configurations or build RBMD. Reproducing the published multi-device scaling runs does require an HPC environment with the corresponding number of GPUs/DCUs, MPI, and a Slurm-compatible scheduler. Partition names, module versions, device requests, and launcher options in the archived submission scripts are site-specific and must be adapted to the target cluster.
 
 ## Repository layout
