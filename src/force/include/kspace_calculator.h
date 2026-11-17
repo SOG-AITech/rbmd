@@ -45,9 +45,6 @@ private:
   //RBE
   void RBEInit(Box box,rbmd::Real alpha,rbmd::Id RBE_P,
                bool use_random = true);
-  void InitRbeReplicateSampling();
-  Box BuildRbeSamplingBox(Box box) const;
-  bool RbeReplicateSamplingEnabled() const;
   void ComputeChargeStructureFactorRBE_opt(
      Box box,
      rbmd::Id num_atoms,
@@ -128,7 +125,6 @@ private:
   thrust::device_vector<rbmd::Real>  _P_Sample_x;
   thrust::device_vector<rbmd::Real>  _P_Sample_y;
   thrust::device_vector<rbmd::Real>  _P_Sample_z;
-  std::array<rbmd::Id, 3> _rbe_replicate_factors{{1, 1, 1}};
   //
   thrust::device_vector<rbmd::Real> _rhok_real_redue;
   thrust::device_vector<rbmd::Real> _rhok_image_redue;

@@ -556,7 +556,6 @@ int RbmdParallelUntil::FindAtomOwnerRank(rbmd::Real px, rbmd::Real py,
 
 void RbmdParallelUntil::GetRbeRadomM(
     rbmd::Real alpha, bool use_random, const Box& sample_box,
-    const std::array<rbmd::Id, 3>& sample_multipliers,
     std::vector<rbmd::Real>& x, std::vector<rbmd::Real>& y,
     std::vector<rbmd::Real>& z) {
   x.resize(_rbe_p_number);
@@ -722,14 +721,6 @@ void RbmdParallelUntil::GetRbeRadomM(
              (2 * RBMD_PI * RBMD_PI));
 
   sampler.Fetch_P_Sample(0.0, sigma, x, y, z);
-  if (sample_multipliers[0] > 1 || sample_multipliers[1] > 1 ||
-      sample_multipliers[2] > 1) {
-    for (int i = 0; i < _rbe_p_number; ++i) {
-      x[i] *= sample_multipliers[0];
-      y[i] *= sample_multipliers[1];
-      z[i] *= sample_multipliers[2];
-    }
-  }
 }
 
 void RbmdParallelUntil::BalanceAndExchange() {

@@ -219,7 +219,6 @@ void KSpaceCalculator::Init()
     if("RBE" == _coulomb_type) {
       derive_alpha_from_coulomb_config();
       _RBE_P = config->Get<rbmd::Id>("coulomb_sample_num", "hyper_parameters", "coulomb");
-      InitRbeReplicateSampling();
 
       //
       bool energy_rbe_flag = config->PathExists({"hyper_parameters", "coulomb" ,"energy_rbe_flag"});
@@ -247,11 +246,9 @@ void KSpaceCalculator::Init()
       "         g_ewald : {}\n"
       "         alpha : {}\n"
       "         rbe_sample_number : {}\n"
-      "         replicate_sampling : ({}, {}, {})\n",
+      "         rbe_sampling : full periodic box\n",
        _coulomb_type, _manual_alpha_override ? "manual" : "auto",
-       _relative_accuracy_user, _g_ewald, _alpha, _RBE_P,
-       _rbe_replicate_factors[0], _rbe_replicate_factors[1],
-       _rbe_replicate_factors[2]);
+       _relative_accuracy_user, _g_ewald, _alpha, _RBE_P);
     }
     //RBSOG
     else if ("RBSOG" == _coulomb_type)
@@ -385,55 +382,6 @@ void KSpaceCalculator::EvaluatePotentialEnergy()
   if (ParseUnit(unit) == UNIT::LJ) {
     _e_kspace = _e_kspace / global_num_atoms;
   }
-}
-
-void KSpaceCalculator::InitRbeReplicateSampling() {
-  _rbe_replicate_factors = {{1, 1, 1}};
-
-  const auto& config = DataManager::getInstance().getConfigData();
-  const bool has_replicate =
-      config->PathExists({"init_configuration", "read_data", "replicate"});
-  const bool has_replicate_dims =
-      config->PathExists({"init_configuration", "read_data", "replicate_dims"});
-  if (!has_replicate && !has_replicate_dims) {
-    return;
-  }
-
-  const char* key = has_replicate ? "replicate" : "replicate_dims";
-  auto values = config->GetArray<int>(key, "init_configuration", "read_data");
-  if (values.size() != 3) {
-    Logger::Instance().error(
-        "\033[31m init_configuration.read_data.{} must contain exactly 3 integers. \033[0m",
-        key);
-    exit(EXIT_FAILURE);
-  }
-
-  for (std::size_t i = 0; i < 3; ++i) {
-    if (values[i] <= 0) {
-      Logger::Instance().error(
-          "\033[31m init_configuration.read_data.{} values must be positive. \033[0m",
-          key);
-      exit(EXIT_FAILURE);
-    }
-    _rbe_replicate_factors[i] = static_cast<rbmd::Id>(values[i]);
-  }
-}
-
-bool KSpaceCalculator::RbeReplicateSamplingEnabled() const {
-  return _rbe_replicate_factors[0] > 1 || _rbe_replicate_factors[1] > 1 ||
-         _rbe_replicate_factors[2] > 1;
-}
-
-Box KSpaceCalculator::BuildRbeSamplingBox(Box box) const {
-  for (int dim = 0; dim < 3; ++dim) {
-    const auto factor = static_cast<rbmd::Real>(_rbe_replicate_factors[dim]);
-    box._length[dim] /= factor;
-    box._length_inv[dim] =
-        box._length[dim] > rbmd::Real{0.0} ? rbmd::Real{1.0} / box._length[dim]
-                                           : rbmd::Real{0.0};
-    box._coord_max[dim] = box._coord_min[dim] + box._length[dim];
-  }
-  return box;
 }
 
 void KSpaceCalculator::ComputeEwald()
@@ -588,9 +536,8 @@ void KSpaceCalculator::ComputeRBE()
   //
   auto num_atoms = *(_structure_info_data->_num_atoms);
   const Box force_box = GetPeriodicBoxForKspace(*_box);
-  const Box rbe_sampling_box = BuildRbeSamplingBox(force_box);
   const rbmd::Real rbe_sum_gauss =
-      ComputeRbeGaussianSum(rbe_sampling_box, _alpha);
+      ComputeRbeGaussianSum(force_box, _alpha);
   _rhok_real_redue.resize(_RBE_P);
   _rhok_image_redue.resize(_RBE_P);
 
@@ -724,13 +671,12 @@ void KSpaceCalculator::ComputeRBEVirial(rbmd::Real rbe_sum_gauss)
 void KSpaceCalculator::RBEInit(Box box,rbmd::Real alpha,rbmd::Id RBE_P,
                                bool use_random)
 {
-  const Box sampling_box = BuildRbeSamplingBox(box);
 #ifdef USE_MPI
   std::vector<rbmd::Real> h_P_Sample_x;
   std::vector<rbmd::Real> h_P_Sample_y;
   std::vector<rbmd::Real> h_P_Sample_z;
-  GET_RBMD_PARALLEL->GetRbeRadomM(alpha, use_random, sampling_box,
-                                  _rbe_replicate_factors, h_P_Sample_x,
+  GET_RBMD_PARALLEL->GetRbeRadomM(alpha, use_random, box,
+                                  h_P_Sample_x,
                                   h_P_Sample_y, h_P_Sample_z);
   const auto expected_size = static_cast<std::size_t>(RBE_P);
   if (h_P_Sample_x.size() != expected_size ||
@@ -749,10 +695,10 @@ void KSpaceCalculator::RBEInit(Box box,rbmd::Real alpha,rbmd::Id RBE_P,
   _P_Sample_z.assign(h_P_Sample_z.begin(), h_P_Sample_z.end());
 #else
   Real3 sigma = {
-      rbmd::Real((SQRT(alpha / 2.0) * sampling_box._length[0] / M_PI)),
-      rbmd::Real((SQRT(alpha / 2.0) * sampling_box._length[1] / M_PI)),
-      rbmd::Real((SQRT(alpha / 2.0) * sampling_box._length[2] / M_PI))};
-  RBEPSAMPLE rbe_presolve_psample = { alpha, sampling_box, RBE_P, use_random};
+      rbmd::Real((SQRT(alpha / 2.0) * box._length[0] / M_PI)),
+      rbmd::Real((SQRT(alpha / 2.0) * box._length[1] / M_PI)),
+      rbmd::Real((SQRT(alpha / 2.0) * box._length[2] / M_PI))};
+  RBEPSAMPLE rbe_presolve_psample = { alpha, box, RBE_P, use_random};
   thrust::host_vector<rbmd::Real> h_P_Sample_x(RBE_P);
   thrust::host_vector<rbmd::Real> h_P_Sample_y(RBE_P);
   thrust::host_vector<rbmd::Real> h_P_Sample_z(RBE_P);
@@ -762,13 +708,6 @@ void KSpaceCalculator::RBEInit(Box box,rbmd::Real alpha,rbmd::Id RBE_P,
     thrust::raw_pointer_cast(h_P_Sample_x.data()),
     thrust::raw_pointer_cast(h_P_Sample_y.data()),
     thrust::raw_pointer_cast(h_P_Sample_z.data()));
-  if (RbeReplicateSamplingEnabled()) {
-    for (rbmd::Id i = 0; i < RBE_P; ++i) {
-      h_P_Sample_x[i] *= _rbe_replicate_factors[0];
-      h_P_Sample_y[i] *= _rbe_replicate_factors[1];
-      h_P_Sample_z[i] *= _rbe_replicate_factors[2];
-    }
-  }
   _P_Sample_x = h_P_Sample_x;
   _P_Sample_y = h_P_Sample_y;
   _P_Sample_z = h_P_Sample_z;

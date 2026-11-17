@@ -37,7 +37,6 @@ class RbmdParallelUntil {
   unsigned int GetDeterministicRandomSeed();
 
   void GetRbeRadomM(rbmd::Real alpha, bool use_random, const Box& sample_box,
-                    const std::array<rbmd::Id, 3>& sample_multipliers,
                     std::vector<rbmd::Real>& x, std::vector<rbmd::Real>& y,
                     std::vector<rbmd::Real>& z);
 
