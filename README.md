@@ -51,21 +51,12 @@ The `benchmark/` directory contains curated configurations, Slurm submission scr
 | LJ-salt | [`benchmark/lj_salt`](benchmark/lj_salt) | `benchmark/lj_salt/workbook/run_LJ_salt.xlsx` |
 | PEO-LiTFSI | [`benchmark/peo_litfsi`](benchmark/peo_litfsi) | `benchmark/peo_litfsi/workbook/run_PEO.xlsx` |
 
-The four publication input systems are distributed as a single
-[`rbmd-data-v2.tar.gz`](https://github.com/qizhou1729/rbmd/releases/download/benchmark-data-v2/rbmd-data-v2.tar.gz)
-Release asset rather than stored in Git. Download and extract it from the
-repository root:
+### Benchmark input data
 
-```bash
-curl -L https://github.com/qizhou1729/rbmd/releases/download/benchmark-data-v2/rbmd-data-v2.tar.gz \
-  -o rbmd-data-v2.tar.gz
-tar -xzf rbmd-data-v2.tar.gz
-```
+The benchmark inputs are distributed in two releases.
 
-The archive installs the three shared benchmark inputs and the equilibrated H2O
-RDF seed at the canonical paths used by the retained configurations. See
-[`benchmark/data/README.md`](benchmark/data/README.md) for the exact file list,
-system definitions, and checksums.
+1. [Original input archive](https://github.com/qizhou1729/rbmd/releases/tag/benchmark-data-v2). Extract `rbmd-data-v2.tar.gz` from the repository root to install the shared water, LJ electrolyte and PEO–LiTFSI inputs and the equilibrated water RDF seed. The 976,200-atom PEO–LiTFSI parent configuration is reused for the revision.
+2. [Revised force-benchmark inputs](https://github.com/SOG-AITech/rbmd/releases/tag/benchmark-lj-200000). This release collects the additional full-box configurations for SPC/E water (72,981, 1,970,487 and 15,763,896 atoms) and LJ electrolyte (200,000, 2,000,000 and 28,000,000 atoms). Each configuration is distributed as a separate gzip file. The filename gives the system and atom count.
 
 A supercomputer is not needed to read the benchmark configurations or build RBMD. Reproducing the published multi-device scaling runs does require an HPC environment with the corresponding number of GPUs/DCUs, MPI, and a Slurm-compatible scheduler. Partition names, module versions, device requests, and launcher options in the archived submission scripts are site-specific and must be adapted to the target cluster.
 
