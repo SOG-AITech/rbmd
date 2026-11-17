@@ -36,7 +36,7 @@ class ObservableTests(unittest.TestCase):
     def test_generation_has_only_the_selected_observable(self):
         trajectory=self.path/'trajectory.dump';trajectory.write_text(self.trajectory())
         for mode,name in [('rdf','water'),('dielectric','water'),('structure','lj')]:
-            system=ROOT/'systems'/('lj.json' if name=='lj' else name+'.rdf.json')
+            system=ROOT/'systems'/(name+'.json')
             s=json.loads(system.read_text());cfg=s['rbmd'];style=cfg['init_configuration']['read_data']['atom_style']
             cfg['init_configuration']['read_data']['file']=str(self.data(style))
             case=self.path/('case-'+mode);case.mkdir();(case/'rbmd.json').write_text(json.dumps(cfg))

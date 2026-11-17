@@ -37,9 +37,9 @@ bash 03_size_variance/prepare.sh --system systems/lj.json \
   --P 200 --p 30 --alpha 0.024 --rs 16 --rc 8 \
   --samples 1000 --output runs/lj-size-v1
 
-bash 03_size_variance/prepare.sh --system systems/water.rdf.json \
-  --data W0_small_water/terminal.data W1_medium_water/terminal.data \
-  --P 200 --p 30 --alpha 0.08 --rs 9 --rc 5.5 \
+bash 03_size_variance/prepare.sh --system systems/water.json \
+  --data water-72981.data water-1970487.data water-15763896.data \
+  --P 300 --p 100 --alpha 0.065776184 --rs 10 --rc 6.5 \
   --samples 1000 --output runs/water-size-v1
 ```
 

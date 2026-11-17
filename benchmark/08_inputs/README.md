@@ -24,7 +24,7 @@ python3 08_inputs/prepare_water_base.py --data-root ../rbmd/benchmark/data --out
 下面的命令针对所选物性体系的一组独立轨迹，不按03的各N批量执行。生成任务不表示已经得到5份合格平衡态；不同随机速度也不自动保证后续构型相互独立。
 
 ```bash
-python3 08_inputs/prepare_states.py --system systems/water.rdf.json --steps 2000000 --output runs/water-equilibration-v1
+python3 08_inputs/prepare_states.py --system systems/water.json --steps 2000000 --output runs/water-equilibration-v1
 # 提交前自行按体系弛豫时间确定单次平衡长度
 while IFS= read -r case; do sbatch common/job.slurm "$case"; done < runs/water-equilibration-v1/cases.txt
 ```
