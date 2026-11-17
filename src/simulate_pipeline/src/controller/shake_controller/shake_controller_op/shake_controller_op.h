@@ -1,4 +1,5 @@
 #pragma once
+#include "common/atom_index_map.h"
 
 #include "../common/device_types.h"
 #include "types.h"
@@ -11,7 +12,7 @@ namespace op {
                       const rbmd::Real dt,
                       const rbmd::Real fmt2v, 
                       Box box,
-                      const rbmd::Id* atom_id_to_idx,
+                      rbmd::AtomIndexMapView atom_id_to_idx,
                       const rbmd::Real* mass, 
                       const rbmd::Id* atoms_type,
                       const Id3* angle_id_vec,
@@ -35,7 +36,7 @@ namespace op {
                         rbmd::Real dt,
                         rbmd::Real fmt2v,
                         Box box,
-                        const rbmd::Id* atom_id_to_idx,
+                        rbmd::AtomIndexMapView atom_id_to_idx,
                         const rbmd::Real* mass,
                         const rbmd::Id* atoms_type,
                         const Id3* angle_id_vec,
@@ -150,7 +151,7 @@ namespace op {
                       rbmd::Real dt,
                       rbmd::Real fmt2v,
                       Box box,
-                      const rbmd::Id* atom_id_to_idx,
+                      rbmd::AtomIndexMapView atom_id_to_idx,
                       const rbmd::Real* mass,
                       const rbmd::Id* atoms_type,
                       const Id3* angle_id_vec,
@@ -174,7 +175,7 @@ namespace op {
                         const rbmd::Real dt,
                         const rbmd::Real fmt2v,
                         Box box,
-                        const rbmd::Id* atom_id_to_idx,
+                        rbmd::AtomIndexMapView atom_id_to_idx,
                         const rbmd::Real* mass,
                         const rbmd::Id* atoms_type,
                         const Id3* angle_id_vec,

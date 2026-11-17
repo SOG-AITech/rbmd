@@ -107,7 +107,7 @@ void NVTensemble::Init() {
 
   _velocity_controller->Init();
   _force_controller->Init();
-  _force_controller->Execute();
+  EvaluateForces();
   _shake_controller->Init();
 
   if (_temperature_controller) {
@@ -141,7 +141,7 @@ void NVTensemble::Solve() {
         _NoseHoover_controller->EmitShakeTempDebugCsv("post_shake_a");
       }
 
-      _force_controller->Execute();
+      EvaluateForces();
 
       if (true == use_shake)
       {
@@ -180,7 +180,7 @@ void NVTensemble::Solve() {
       }
 
       DebugNvtPhase("before_force");
-      _force_controller->Execute();
+      EvaluateForces();
       DebugNvtPhase("after_force");
 
       if ("LANGEVIN"==DataManager::getInstance().getConfigData()->Get<std::string>
@@ -220,14 +220,14 @@ void NVTensemble::Solve() {
   else if ("bm" ==_integration_type){
     if("BERENDSEN" == _temp_ctrl_type) {
       _position_controller->Updatebm();
-      _force_controller->Execute();
+      EvaluateForces();
       _velocity_controller->Updatebm();
       _temperature_controller->ComputeTemperature();
       _temperature_controller->Update();
     }
     else if("NOSE_HOOVER" == _temp_ctrl_type) {
       _NoseHoover_controller->InitialBM();
-      _force_controller->Execute();
+      EvaluateForces();
       _NoseHoover_controller->FinalBM();
     }
   }

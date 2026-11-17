@@ -1,5 +1,5 @@
-add_compile_definitions(USE_DOUBLE=${ENABLE_DOUBLE})
-add_compile_definitions(USE_64BIT_IDS=${ENABLE_64BIT_IDS})
+add_compile_definitions(USE_DOUBLE=$<BOOL:${ENABLE_DOUBLE}>)
+add_compile_definitions(USE_64BIT_IDS=$<BOOL:${ENABLE_64BIT_IDS}>)
 
 if(CCL)
   add_compile_definitions(USE_CCL=1)

@@ -1,4 +1,4 @@
-#include "core/periodic_replica.h"
+#include "core/replicate_atoms.h"
 #include "formats/lammps/lammps_full_reader.h"
 
 #include <algorithm>
@@ -53,6 +53,8 @@
 namespace reader {
 
 namespace {
+using namespace reader::replication;
+
 
 using reader::detail::FillZero;
 namespace fs = std::experimental::filesystem;
@@ -239,29 +241,11 @@ void ValidateBondCoeffArrayOrThrow(const char* stage, const char* name,
   }
 }
 
-std::size_t CheckedMultiply(std::size_t lhs, std::size_t rhs,
-                            std::string_view name) {
-  if (rhs != 0 && lhs > std::numeric_limits<std::size_t>::max() / rhs) {
-    throw std::overflow_error(std::string("LAMMPS replicate overflow for ") +
-                              std::string(name));
-  }
-  return lhs * rhs;
-}
 
-rbmd::Id CheckedIdAdd(rbmd::Id lhs, std::size_t rhs,
-                      std::string_view name) {
-  const auto max_id = static_cast<std::size_t>(
-      std::numeric_limits<rbmd::Id>::max());
-  if (rhs > max_id || static_cast<std::size_t>(lhs) > max_id - rhs) {
-    throw std::overflow_error(std::string("LAMMPS replicate id overflow for ") +
-                              std::string(name));
-  }
-  return static_cast<rbmd::Id>(static_cast<std::size_t>(lhs) + rhs);
-}
 
-rbmd::Id NoMoleculeId() {
-  return static_cast<rbmd::Id>(-1);
-}
+
+
+
 
 struct AtomLookup {
   std::unordered_map<rbmd::Id, std::size_t> index_by_id;
@@ -315,47 +299,11 @@ const ParsedSnapshot::Atom& FindAtomOrThrow(const ParsedSnapshot& seed,
   return seed.atoms[it->second];
 }
 
-int CheckedImageFlag(long long value) {
-  if (value < static_cast<long long>(std::numeric_limits<int>::min()) ||
-      value > static_cast<long long>(std::numeric_limits<int>::max())) {
-    throw std::overflow_error("LAMMPS replicate image flag overflow");
-  }
-  return static_cast<int>(value);
-}
 
-struct RemappedCoordinate {
-  rbmd::Real value = 0.0;
-  int image = 0;
-};
 
-RemappedCoordinate RemapPeriodic(rbmd::Real value, rbmd::Real lo,
-                                 rbmd::Real hi) {
-  const rbmd::Real length = hi - lo;
-  if (length <= rbmd::Real{0}) {
-    return {value, 0};
-  }
 
-  long long image = static_cast<long long>(
-      std::floor(static_cast<double>((value - lo) / length)));
-  rbmd::Real wrapped = value - static_cast<rbmd::Real>(image) * length;
-  while (wrapped < lo) {
-    wrapped += length;
-    --image;
-  }
-  while (wrapped >= hi) {
-    wrapped -= length;
-    ++image;
-  }
-  return {wrapped, CheckedImageFlag(image)};
-}
 
-rbmd::Id SameReplicaAtomId(rbmd::Id atom_id, std::size_t rep_index,
-                           std::size_t atom_id_span) {
-  return CheckedIdAdd(atom_id,
-                      CheckedMultiply(rep_index, atom_id_span,
-                                      "replicated atom id offset"),
-                      "replicated atom id");
-}
+
 
 rbmd::Id BondPeriodicAtomId(const ParsedSnapshot& seed,
                             const AtomLookup& lookup,
@@ -382,48 +330,6 @@ rbmd::Id BondPeriodicChainEnd(const ParsedSnapshot& seed,
 }
 
 
-
-ParsedSnapshot::Atom BuildReplicatedAtom(const ParsedSnapshot::Box& seed_box,
-                                         const ParsedSnapshot::Box& output_box,
-                                         const ParsedSnapshot::Atom& atom,
-                                         std::size_t rep_index,
-                                         std::size_t atom_id_span,
-                                         std::size_t molecule_offset,
-                                         rbmd::Real dx,
-                                         rbmd::Real dy,
-                                         rbmd::Real dz,
-                                         bool use_bond_periodic) {
-  auto replica = atom;
-  replica.id = SameReplicaAtomId(atom.id, rep_index, atom_id_span);
-  if (replica.molecule != NoMoleculeId()) {
-    replica.molecule =
-        CheckedIdAdd(replica.molecule, molecule_offset, "molecule id");
-  }
-
-  const rbmd::Real xprd = seed_box.xhi - seed_box.xlo;
-  const rbmd::Real yprd = seed_box.yhi - seed_box.ylo;
-  const rbmd::Real zprd = seed_box.zhi - seed_box.zlo;
-  if (use_bond_periodic) {
-    replica.x = atom.x + dx;
-    replica.y = atom.y + dy;
-    replica.z = atom.z + dz;
-  } else {
-    replica.x = atom.x + static_cast<rbmd::Real>(atom.ix) * xprd + dx;
-    replica.y = atom.y + static_cast<rbmd::Real>(atom.iy) * yprd + dy;
-    replica.z = atom.z + static_cast<rbmd::Real>(atom.iz) * zprd + dz;
-  }
-
-  const auto x = RemapPeriodic(replica.x, output_box.xlo, output_box.xhi);
-  const auto y = RemapPeriodic(replica.y, output_box.ylo, output_box.yhi);
-  const auto z = RemapPeriodic(replica.z, output_box.zlo, output_box.zhi);
-  replica.x = x.value;
-  replica.y = y.value;
-  replica.z = z.value;
-  replica.ix = x.image;
-  replica.iy = y.image;
-  replica.iz = z.image;
-  return replica;
-}
 
 template <typename T>
 T* AllocateTrackedArray(MDDataOwner& owner, std::size_t count) {
@@ -633,6 +539,9 @@ int LammpsFullReader::ReadData() {
 }
 
 void LammpsFullReader::AllocateDataSpace(std::size_t num_atoms) {
+  if (mpi::IsEnabled() && !ReplicateEnabled()) {
+    num_atoms = num_atoms / static_cast<std::size_t>(mpi::Size()) + 1;
+  }
   snapshot_.atoms.clear();
   snapshot_.atoms.reserve(num_atoms);
   atom_index_by_id_.clear();
@@ -1023,7 +932,10 @@ void LammpsFullReader::ApplyReplicate() {
           replica.atom1 = topology_atom(dihedral.atom2, dihedral.atom1);
           replica.atom2 = same_replica_atom(dihedral.atom2);
           replica.atom3 = topology_atom(dihedral.atom2, dihedral.atom3);
-          replica.atom4 = replicate_bond_periodic_ ? BondPeriodicChainEnd(seed, atom_lookup, dihedral.atom3, dihedral.atom4, replica.atom3, nx, ny, nz, atom_id_span) : same_replica_atom(dihedral.atom4);
+          replica.atom4 = replicate_bond_periodic_
+              ? BondPeriodicChainEnd(seed, atom_lookup, dihedral.atom3,
+                    dihedral.atom4, replica.atom3, nx, ny, nz, atom_id_span)
+              : same_replica_atom(dihedral.atom4);
           snapshot_.dihedrals.push_back(replica);
         }
         for (const auto& improper : seed.impropers) {
@@ -1099,12 +1011,19 @@ void LammpsFullReader::StreamReplicatedSnapshot() {
   snapshot_.dihedrals.clear();
   snapshot_.impropers.clear();
 
-  std::optional<mpi::StreamCtx> stream_ctx =
-      mpi::BeginStreaming(snapshot_, static_cast<rbmd::Id>(expected_atoms_));
-  streaming_ctx_ = stream_ctx ? &*stream_ctx : nullptr;
-  streaming_mode_ = stream_ctx.has_value();
-
-  if (!stream_ctx) {
+  const bool spatial_replication = atom_style_ == AtomStyle::Atomic &&
+      seed.bonds.empty() && seed.angles.empty() && seed.dihedrals.empty() &&
+      seed.impropers.empty();
+  std::optional<mpi::StreamCtx> stream_ctx = mpi::BeginStreaming(
+      snapshot_, CheckedIdAdd(0, expected_atoms_, "atom count"),
+      spatial_replication ? &seed : nullptr,
+      {nx, ny, nz}, replicate_bond_periodic_);
+  streaming_ctx_ = &*stream_ctx;
+  streaming_mode_ = true;
+  if (stream_ctx->generated_locally) {
+    mpi::EndStreaming(*stream_ctx);
+    streaming_ctx_ = nullptr;
+    streaming_mode_ = false;
     return;
   }
 
@@ -1199,7 +1118,10 @@ void LammpsFullReader::StreamReplicatedSnapshot() {
       replica.atom1 = topology_atom(dihedral.atom2, dihedral.atom1);
       replica.atom2 = same_replica_atom(dihedral.atom2);
       replica.atom3 = topology_atom(dihedral.atom2, dihedral.atom3);
-      replica.atom4 = replicate_bond_periodic_ ? BondPeriodicChainEnd(seed, atom_lookup, dihedral.atom3, dihedral.atom4, replica.atom3, nx, ny, nz, atom_id_span) : same_replica_atom(dihedral.atom4);
+      replica.atom4 = replicate_bond_periodic_
+              ? BondPeriodicChainEnd(seed, atom_lookup, dihedral.atom3,
+                    dihedral.atom4, replica.atom3, nx, ny, nz, atom_id_span)
+              : same_replica_atom(dihedral.atom4);
       mpi::StreamDihedral(*stream_ctx, replica);
     }
   });
@@ -2438,11 +2360,10 @@ void LammpsFullReader::PopulateForceField() {
           }
           const auto index = static_cast<std::size_t>(entry.first);
           if (index < dihedral_type_count) {
-            // OPLS kernels use the half-scaled coefficients, as in LAMMPS.
-            cvff->_h_dihedral_coeffs_k1[index] = rbmd::Real(0.5) * entry.second.k1;
-            cvff->_h_dihedral_coeffs_k2[index] = rbmd::Real(0.5) * entry.second.k2;
-            cvff->_h_dihedral_coeffs_k3[index] = rbmd::Real(0.5) * entry.second.k3;
-            cvff->_h_dihedral_coeffs_k4[index] = rbmd::Real(0.5) * entry.second.k4;
+            cvff->_h_dihedral_coeffs_k1[index] = entry.second.k1;
+            cvff->_h_dihedral_coeffs_k2[index] = entry.second.k2;
+            cvff->_h_dihedral_coeffs_k3[index] = entry.second.k3;
+            cvff->_h_dihedral_coeffs_k4[index] = entry.second.k4;
           }
         }
       } else {

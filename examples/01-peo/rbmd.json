@@ -40,6 +40,7 @@
       "type": "RBE", //  RBE,EWALD
       "coulomb_sample_num": 2000,
       "accuracy": 1.0e-4,
+      //"debug_alpha": true, // Required only for a manual debug override
       //"alpha": 0.04333893,
       //"kmax": [ 18 ,34 ,22],
 	  "energy_rbe_flag":  "yes"   //yes ,no 

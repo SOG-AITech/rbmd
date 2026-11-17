@@ -1,6 +1,7 @@
 #pragma once
 #include <spdlog/spdlog.h>
 #include <iomanip>
+#include <stdexcept>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -44,7 +45,7 @@ private:
       {"total-potential-energy", "PotEng"}
   };
 
-  std::unordered_map<std::string, rbmd::Real> thermo_data;
+  std::unordered_map<std::string, double> thermo_data;
   rbmd::Id current_step = 0;
   std::shared_ptr<IThermoView> thermo_view;
 
@@ -69,7 +70,7 @@ private:
   /**
    * @brief 全部使用科学计数法格式化
    */
-  std::string FormatValue(rbmd::Real value) const {
+  std::string FormatValue(double value) const {
     std::stringstream ss;
     ss << std::scientific << std::setprecision(SCIENTIFIC_PRECISION) << value;
     return ss.str();
@@ -200,8 +201,14 @@ public:
 
   void SetStep(rbmd::Id step) { current_step = step; }
 
-  void AddThermoData(const std::string& key, rbmd::Real value) {
+  void AddThermoData(const std::string& key, double value) {
     thermo_data[key] = value;
+  }
+
+  double GetThermoData(const std::string& key) const {
+    const auto it = thermo_data.find(key);
+    if (it == thermo_data.end()) throw std::runtime_error("Missing current thermodynamic value: " + key);
+    return it->second;
   }
 
   bool ShouldOutput() {

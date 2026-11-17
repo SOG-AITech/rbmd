@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <iomanip>
+#include <thrust/reduce.h>
 #include <sstream>
 #include <stdexcept>
 
@@ -17,7 +19,9 @@
 #include "neighbor_list/include/linked_cell/linked_cell_locator.h"
 #include "neighbor_list/include/neighbor_list_builder/full_neighbor_list_builder.h"
 #include "neighbor_list/include/neighbor_list_builder/rbl_full_neighbor_list_builder.h"
+#ifdef USE_MPI
 #include "rbmd_parallel_until_locator.h"
+#endif
 #include "thrust/sort.h"
 // #include <hipcub/hipcub.hpp>
 // #include <hipcub/backend/rocprim/block/block_reduce.hpp>
@@ -65,7 +69,14 @@ rbmd::Id ComputeRblSelectionFrequency(const LinkedCell& linked_cell,
   if (!(volume > rbmd::Real(0)) || neighbor_sample_num <= 0) {
     throw std::runtime_error("Invalid EAM direct RBL sampling parameters");
   }
-  const rbmd::Real density = linked_cell._total_atoms_num / volume;
+#ifdef USE_MPI
+  const rbmd::GlobalCount atom_count =
+      GET_RBMD_PARALLEL->_global_structure_info.total_atoms;
+#else
+  const rbmd::GlobalCount atom_count = linked_cell._native_atoms_num;
+#endif
+  const rbmd::Real density = static_cast<rbmd::Real>(
+      static_cast<double>(atom_count) / static_cast<double>(volume));
   if (!(density > rbmd::Real(0))) {
     throw std::runtime_error("EAM direct RBL requires a positive atom density");
   }
@@ -387,8 +398,10 @@ void EAM::EAMVerlet() {
   const auto total_atoms = linked_cell->_total_atoms_num;
   thrust::device_vector<rbmd::Real> eam_fp(total_atoms);
 
-  thrust::device_vector<rbmd::Real> d_energy_embedding(1, 0.0);
-  thrust::device_vector<rbmd::Real> d_energy_pair(1, 0.0);
+  thrust::device_vector<rbmd::Energy> d_energy_embedding(
+      (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE, 0.0);
+  thrust::device_vector<rbmd::Energy> d_energy_pair(
+      (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE, 0.0);
 
   const char* validate_neighbors =
       std::getenv("RBMD_DEBUG_VALIDATE_EAM_VERLET_NEIGHBORS");
@@ -483,16 +496,16 @@ thrust::raw_pointer_cast(d_energy_pair.data()));
       csv << "step,gid,fx,fy,fz\n";
     }
     for (rbmd::Id i = 0; i < num_atoms; ++i) {
-      csv << test_current_step << ',' << ids[i] << ',' << fx[i] << ','
+      csv << std::setprecision(std::numeric_limits<rbmd::Real>::max_digits10) << test_current_step << ',' << ids[i] << ',' << fx[i] << ','
           << fy[i] << ',' << fz[i] << '\n';
     }
   }
 
   // D2H
-  thrust::host_vector<rbmd::Real> h_energy_embedding(d_energy_embedding);
-  thrust::host_vector<rbmd::Real> h_energy_pair(d_energy_pair);
-  _e_embedding = h_energy_embedding[0];
-  _e_pair =  h_energy_pair[0];
+  _e_embedding = thrust::reduce(
+      d_energy_embedding.begin(), d_energy_embedding.end(), rbmd::Energy(0));
+  _e_pair = thrust::reduce(
+      d_energy_pair.begin(), d_energy_pair.end(), rbmd::Energy(0));
 
   auto end_f = std::chrono::high_resolution_clock::now();
   std::chrono::duration<rbmd::Real> duration_f = end_f - start_f;
@@ -510,7 +523,7 @@ void EAM::EAMDirectRBL() {
 
   const rbmd::Id num_atoms = *(_structure_info_data->_num_atoms);
   const rbmd::Id total_atoms = linked_cell->_total_atoms_num;
-  if (num_atoms <= 0 || total_atoms < num_atoms) {
+  if (num_atoms < 0 || total_atoms < num_atoms) {
     throw std::runtime_error("Invalid atom counts for EAM direct traversal");
   }
 
@@ -528,12 +541,16 @@ void EAM::EAMDirectRBL() {
   const rbmd::Id neighbor_sample_num = config->Get<rbmd::Id>(
       "neighbor_sample_num", "hyper_parameters", "neighbor");
   const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
-  const rbmd::Id selection_frequency = ComputeRblSelectionFrequency(
+  const rbmd::Id selection_frequency = num_atoms == 0 ? 1 : ComputeRblSelectionFrequency(
       *linked_cell, force_box, r_core, file.cut_off, neighbor_sample_num);
 
   const auto force_start = std::chrono::high_resolution_clock::now();
   thrust::device_vector<rbmd::Real> eam_fp(total_atoms);
-  thrust::device_vector<rbmd::Real> d_energy_embedding(1, 0.0);
+  thrust::device_vector<rbmd::Energy> d_energy_embedding(
+      (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE, 0.0);
+  const bool compute_pair_energy = _energy_rbl_flag == "yes";
+  thrust::device_vector<rbmd::Energy> d_energy_pair(
+      compute_pair_energy ? (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE : 0);
   op::ComputeFpDirect<device::DEVICE_GPU>()(
       force_box, eam_paras, file.cut_off, num_atoms, traversal,
       thrust::raw_pointer_cast(_d_rhor_spline.data()),
@@ -542,7 +559,9 @@ void EAM::EAMDirectRBL() {
       thrust::raw_pointer_cast(_device_data->_d_py.data()),
       thrust::raw_pointer_cast(_device_data->_d_pz.data()),
       thrust::raw_pointer_cast(eam_fp.data()),
-      thrust::raw_pointer_cast(d_energy_embedding.data()));
+      thrust::raw_pointer_cast(d_energy_embedding.data()),
+      compute_pair_energy ? thrust::raw_pointer_cast(_d_z2r_spline.data()) : nullptr,
+      compute_pair_energy ? thrust::raw_pointer_cast(d_energy_pair.data()) : nullptr);
 
 #ifdef USE_MPI
   GET_RBMD_PARALLEL->ForwardExchangeAtomScalar(eam_fp);
@@ -561,43 +580,14 @@ void EAM::EAMDirectRBL() {
       thrust::raw_pointer_cast(_device_data->_d_fy.data()),
       thrust::raw_pointer_cast(_device_data->_d_fz.data()));
 
-  const auto native_end_x = _device_data->_d_fx.begin() + num_atoms;
-  const auto native_end_y = _device_data->_d_fy.begin() + num_atoms;
-  const auto native_end_z = _device_data->_d_fz.begin() + num_atoms;
-  _corr_value_x =
-      thrust::reduce(_device_data->_d_fx.begin(), native_end_x, 0.0f,
-                     thrust::plus<rbmd::Real>()) /
-      num_atoms;
-  _corr_value_y =
-      thrust::reduce(_device_data->_d_fy.begin(), native_end_y, 0.0f,
-                     thrust::plus<rbmd::Real>()) /
-      num_atoms;
-  _corr_value_z =
-      thrust::reduce(_device_data->_d_fz.begin(), native_end_z, 0.0f,
-                     thrust::plus<rbmd::Real>()) /
-      num_atoms;
-  op::FixRBLForceOp<device::DEVICE_GPU>()(
-      num_atoms, _corr_value_x, _corr_value_y, _corr_value_z,
-      thrust::raw_pointer_cast(_device_data->_d_fx.data()),
-      thrust::raw_pointer_cast(_device_data->_d_fy.data()),
-      thrust::raw_pointer_cast(_device_data->_d_fz.data()));
+  ApplyRblForceCorrection(num_atoms);
 
-  thrust::host_vector<rbmd::Real> h_energy_embedding(d_energy_embedding);
-  _e_embedding = h_energy_embedding[0];
+  _e_embedding = thrust::reduce(
+      d_energy_embedding.begin(), d_energy_embedding.end(), rbmd::Energy(0));
   _e_pair = 0;
-  if (_energy_rbl_flag == "yes") {
-    thrust::device_vector<rbmd::Real> d_energy_pair(1, 0.0);
-    op::ComputeEAMEnergyDirect<device::DEVICE_GPU>()(
-        force_box, eam_paras, file.cut_off, num_atoms, traversal,
-        thrust::raw_pointer_cast(_d_rhor_spline.data()),
-        thrust::raw_pointer_cast(_d_z2r_spline.data()),
-        thrust::raw_pointer_cast(_device_data->_d_px.data()),
-        thrust::raw_pointer_cast(_device_data->_d_py.data()),
-        thrust::raw_pointer_cast(_device_data->_d_pz.data()),
-        thrust::raw_pointer_cast(eam_fp.data()),
-        thrust::raw_pointer_cast(d_energy_pair.data()));
-    thrust::host_vector<rbmd::Real> h_energy_pair(d_energy_pair);
-    _e_pair = h_energy_pair[0];
+  if (compute_pair_energy) {
+    _e_pair = thrust::reduce(
+      d_energy_pair.begin(), d_energy_pair.end(), rbmd::Energy(0));
   }
 
   const auto force_end = std::chrono::high_resolution_clock::now();
@@ -619,7 +609,8 @@ void EAM::EAMRBL() {
   const auto total_atoms =
       LinkedCellLocator::GetInstance().GetLinkedCell()->_total_atoms_num;
   thrust::device_vector<rbmd::Real> eam_fp(total_atoms);
-  thrust::device_vector<rbmd::Real> d_energy_embedding(1,0.0);
+  thrust::device_vector<rbmd::Energy> d_energy_embedding(
+      (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE, 0.0);
 
   //1:  compute fp
   const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
@@ -638,8 +629,8 @@ thrust::raw_pointer_cast(_device_data->_d_pz.data()),
 thrust::raw_pointer_cast(eam_fp.data()),
 thrust::raw_pointer_cast(d_energy_embedding.data()));
 
-  thrust::host_vector<rbmd::Real> h_energy_embedding(d_energy_embedding);
-  _e_embedding = h_energy_embedding[0];
+  _e_embedding = thrust::reduce(
+      d_energy_embedding.begin(), d_energy_embedding.end(), rbmd::Energy(0));
 
 #ifdef USE_MPI
   GET_RBMD_PARALLEL->ForwardExchangeAtomScalar(eam_fp);
@@ -678,21 +669,7 @@ thrust::raw_pointer_cast(_device_data->_d_fx.data()),
 thrust::raw_pointer_cast(_device_data->_d_fy.data()),
 thrust::raw_pointer_cast(_device_data->_d_fz.data()));
 
-  _corr_value_x =
-    thrust::reduce(_device_data->_d_fx.begin(), _device_data->_d_fx.end(),
-                   0.0f, thrust::plus<rbmd::Real>()) /num_atoms;
-  _corr_value_y =
-      thrust::reduce(_device_data->_d_fy.begin(), _device_data->_d_fy.end(),
-                     0.0f, thrust::plus<rbmd::Real>()) /num_atoms;
-  _corr_value_z =
-      thrust::reduce(_device_data->_d_fz.begin(), _device_data->_d_fz.end(),
-                     0.0f, thrust::plus<rbmd::Real>()) /num_atoms;
-  // fix RBL:   rbl_force = force - corr_value
-  op::FixRBLForceOp<device::DEVICE_GPU>()(
-                      num_atoms, _corr_value_x, _corr_value_y, _corr_value_z,
-                      thrust::raw_pointer_cast(_device_data->_d_fx.data()),
-                      thrust::raw_pointer_cast(_device_data->_d_fy.data()),
-                      thrust::raw_pointer_cast(_device_data->_d_fz.data()));
+  ApplyRblForceCorrection(num_atoms);
 
   auto end_rbl_force = std::chrono::high_resolution_clock::now();
   std::chrono::duration<rbmd::Real> duration_rbl_force = end_rbl_force - start_rbl_force;
@@ -706,11 +683,36 @@ thrust::raw_pointer_cast(_device_data->_d_fz.data()));
 
 }
 
+void EAM::ApplyRblForceCorrection(rbmd::Id num_atoms) {
+  // A single global mean keeps momentum correction independent of rank count;
+  // ghost/padded entries must not enter this sum.
+  double sums[3] = {
+      thrust::reduce(_device_data->_d_fx.begin(), _device_data->_d_fx.begin() + num_atoms, 0.0, thrust::plus<double>()),
+      thrust::reduce(_device_data->_d_fy.begin(), _device_data->_d_fy.begin() + num_atoms, 0.0, thrust::plus<double>()),
+      thrust::reduce(_device_data->_d_fz.begin(), _device_data->_d_fz.begin() + num_atoms, 0.0, thrust::plus<double>())};
+  rbmd::GlobalCount count = num_atoms;
+#ifdef USE_MPI
+  MPI_Allreduce(MPI_IN_PLACE, sums, 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &count, 1, MPI_LONG_LONG, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  if (count <= 0) throw std::runtime_error("EAM requires a nonempty global system");
+  _corr_value_x = static_cast<rbmd::Real>(sums[0] / count);
+  _corr_value_y = static_cast<rbmd::Real>(sums[1] / count);
+  _corr_value_z = static_cast<rbmd::Real>(sums[2] / count);
+  if (num_atoms > 0)
+    op::FixRBLForceOp<device::DEVICE_GPU>()(num_atoms, _corr_value_x,
+        _corr_value_y, _corr_value_z,
+        thrust::raw_pointer_cast(_device_data->_d_fx.data()),
+        thrust::raw_pointer_cast(_device_data->_d_fy.data()),
+        thrust::raw_pointer_cast(_device_data->_d_fz.data()));
+}
+
 void EAM::ComputEAMEnergy(
     const thrust::device_vector<rbmd::Real>& eam_fp) {
   // Reuse the full list that produced fp; rebuilding would replace ghosts.
   auto num_atoms = *(_structure_info_data->_num_atoms);
-  thrust::device_vector<rbmd::Real> d_energy_pair(1, 0.0);
+  thrust::device_vector<rbmd::Energy> d_energy_pair(
+      (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE, 0.0);
 
   const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
   op::ComputeEAMEnergy<device::DEVICE_GPU>()(
@@ -729,8 +731,8 @@ thrust::raw_pointer_cast(eam_fp.data()),
 thrust::raw_pointer_cast(d_energy_pair.data()));
 
   // D2H
-  thrust::host_vector<rbmd::Real> h_energy_pair(d_energy_pair);
-  _e_pair = h_energy_pair[0];
+  _e_pair = thrust::reduce(
+      d_energy_pair.begin(), d_energy_pair.end(), rbmd::Energy(0));
 }
 
 void EAM::SumForces() {
@@ -745,7 +747,7 @@ void EAM::SumForces() {
 
   //
 //   auto atom_id_to_idx =
-// LinkedCellLocator::GetInstance().GetLinkedCell()->_atom_id_to_idx;
+// LinkedCellLocator::GetInstance().GetLinkedCell()->AtomIndexMap();
 //    thrust::host_vector<rbmd::Real> h_fx(num_atoms);
 //    thrust::host_vector<rbmd::Real> h_fy(num_atoms);
 //    thrust::host_vector<rbmd::Real> h_fz(num_atoms);
@@ -768,7 +770,7 @@ void EAM::SumForces() {
 
 void EAM::EvaluatePotentialEnergy() {
 
-  _e_pe = GetGlobalRealSum(_e_embedding + _e_pair);
+  _e_pe = GetGlobalEnergySum(_e_embedding + _e_pair);
   //std::cout<<  "energy:  "<< _e_embedding   <<  ", "<<   _e_pair   <<   std::endl;
   ThermoStats::Instance().AddThermoData("total-potential-energy",_e_pe);
 
@@ -784,7 +786,7 @@ void EAM::EvaluatePotentialEnergy() {
     outfile << "step  e_pe" << std::endl;
   }
   if (test_current_step % interval == 0) {
-    outfile << test_current_step << " " <<  _e_pe << std::endl;
+    outfile << test_current_step << " " << std::setprecision(std::numeric_limits<rbmd::Energy>::max_digits10) << _e_pe << std::endl;
   }
   outfile.close();
 }

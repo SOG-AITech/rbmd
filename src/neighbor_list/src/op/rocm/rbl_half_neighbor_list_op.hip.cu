@@ -1,6 +1,8 @@
 #include "full_neighbor_list_op.h"
+#include "common/atomic_count.h"
 #include "rbl_half_neighbor_list_op.h"
 #include "src/op/rbl_half_neighbor_list_op.h"
+#include <cstdint>
 namespace op {
 
 // TODO warp op and optimize
@@ -35,6 +37,9 @@ __global__ void GenerateRBLHalfNeighborList(
     neighbor_num = neighbor_start[atom_idx];
     rbmd::Id total_neighbor_num = 0;
     rbmd::Id cell_idx = __ldg(&per_atom_cell_id[atom_idx]);
+    const std::uint64_t neighbor_cell_row =
+        static_cast<std::uint64_t>(cell_idx) *
+        static_cast<std::uint64_t>(neighbor_cell_num);
 
     // 缓存原子位置到共享内存
     if (threadIdx.x < BLOCK_SIZE) {
@@ -44,8 +49,8 @@ __global__ void GenerateRBLHalfNeighborList(
     }
     __syncthreads();
     for (int i = 0; i < neighbor_cell_num; ++i) {
-      rbmd::Id neighbour_cell_idx =
-               __ldg(&neighbor_cell[cell_idx * neighbor_cell_num + i]);
+      rbmd::Id neighbour_cell_idx = __ldg(
+          &neighbor_cell[neighbor_cell_row + static_cast<std::uint64_t>(i)]);
       rbmd::Id start = __ldg(&in_atom_list_start_index[neighbour_cell_idx]);
       rbmd::Id end = __ldg(&in_atom_list_end_index[neighbour_cell_idx]);
       for (rbmd::Id neighbor_atom_pos = start; neighbor_atom_pos < end;
@@ -64,7 +69,7 @@ __global__ void GenerateRBLHalfNeighborList(
               neighbors[neighbor_num] = neighbor_atom_idx;
               ++neighbor_num;
             } else {
-              atomicOr(should_realloc, RBMD_TRUE);
+              rbmd::AtomicOrCount(should_realloc, RBMD_TRUE);
             }
             ++total_neighbor_num;
           } else if (distance >= trunc_distance_power_2 &&
@@ -89,7 +94,7 @@ __global__ void GenerateRBLHalfNeighborList(
     random_neighbors_num[atom_idx] = random_neighbor_num;
     rbmd::Id my_total_neighbor_num = total_neighbor_num;
     if (my_total_neighbor_num > max_neighbor_num[atom_idx]) {
-      atomicOr(should_realloc,RBMD_TRUE);
+      rbmd::AtomicOrCount(should_realloc,RBMD_TRUE);
     }
   }
 }

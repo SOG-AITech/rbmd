@@ -21,8 +21,11 @@ namespace op {
   }
 
   //  Block-level
+  template <int Channel>
   __device__ __forceinline__ rbmd::Real blockReduceSum(rbmd::Real val) {
 
+    // Each component needs its own storage: other warps can enter the next
+    // reduction while warp 0 is still reading this component's partial sums.
     __shared__ rbmd::Real shared[OffSet_warpSize];
 
     int lane = threadIdx.x % OffSet_warpSize;
@@ -204,8 +207,8 @@ __global__ void ComputeKspaceChargeStructureFactor(
     local_imag_sum += q * SIN(dot);
   }
 
-  const rbmd::Real total_real = blockReduceSum(local_real_sum);
-  const rbmd::Real total_imag = blockReduceSum(local_imag_sum);
+  const rbmd::Real total_real = blockReduceSum<0>(local_real_sum);
+  const rbmd::Real total_imag = blockReduceSum<1>(local_imag_sum);
   if (threadIdx.x == 0) {
     rho_real[k_idx] = total_real;
     rho_imag[k_idx] = total_imag;
@@ -278,8 +281,8 @@ __global__ void ComputePnumberChargeStructureFactorOpt(
   }
 
   //
-  rbmd::Real total_real = blockReduceSum(local_real_sum);
-  rbmd::Real total_image = blockReduceSum(local_image_sum);
+  rbmd::Real total_real = blockReduceSum<0>(local_real_sum);
+  rbmd::Real total_image = blockReduceSum<1>(local_image_sum);
 
   //
   if (threadIdx.x == 0) {
@@ -584,7 +587,7 @@ __global__ void ComputeRBEVirial0(
     const rbmd::Real* p_sample_y,
     const rbmd::Real* p_sample_z,
     rbmd::Real* virial_tensor,
-    rbmd::Real* energy)
+    rbmd::Real* energy, const rbmd::Real* mode_weights)
 {
 
     //
@@ -631,11 +634,12 @@ __global__ void ComputeRBEVirial0(
         const rbmd::Real rho2 = rho_real * rho_real + rho_imag * rho_imag;
 
       //
-        const rbmd::Real energy_contribution = energy_coef * rho2 / k2;
+        const rbmd::Real coefficient = mode_weights ? (2 * M_PI / V) * mode_weights[i] : energy_coef;
+        const rbmd::Real energy_contribution = coefficient * rho2 / k2;
         atomicAdd(&shared_energy, energy_contribution);
 
         //printf("test---  %f %f  %f %f", k2 ,rho2, S,V);
-        const rbmd::Real base = virial_coef * rho2 / k2;
+        const rbmd::Real base = (mode_weights ? coefficient : virial_coef) * rho2 / k2;
 
 
         // (1/4α² + 1/|k|²)
@@ -674,66 +678,79 @@ __global__ void ComputeRBEVirial0(
 }
 
 
-  // RBEForce
+  // Share sample geometry across the atoms in a block. Each tile is staged
+  // by all threads, including the inactive lanes in the final atom block.
   __global__ void ComputeRBEForce(
-      Box   box, const rbmd::Id num_atoms, const rbmd::Id p_number,
+      Box box, const rbmd::Id num_atoms, const rbmd::Id p_number,
       const rbmd::Real alpha, const rbmd::Real rbe_sum_gauss,
       const rbmd::Real qqr2e,
       const rbmd::Real* __restrict__ real_array, const rbmd::Real* __restrict__ imag_array,
       const rbmd::Real* __restrict__ charge, const rbmd::Real* __restrict__ p_sample_x,
       const rbmd::Real* __restrict__ p_sample_y, const rbmd::Real* __restrict__ p_sample_z,
       const rbmd::Real* __restrict__ px, const rbmd::Real* __restrict__ py, const rbmd::Real* __restrict__ pz,
-      rbmd::Real* __restrict__ fx, rbmd::Real* __restrict__ fy, rbmd::Real* __restrict__ fz) {
+      rbmd::Real* __restrict__ fx, rbmd::Real* __restrict__ fy, rbmd::Real* __restrict__ fz, const rbmd::Real* mode_weights) {
+    __shared__ rbmd::Real sample_kx[BLOCK_SIZE];
+    __shared__ rbmd::Real sample_ky[BLOCK_SIZE];
+    __shared__ rbmd::Real sample_kz[BLOCK_SIZE];
+    __shared__ rbmd::Real sample_denominator[BLOCK_SIZE];
+    __shared__ rbmd::Real sample_real[BLOCK_SIZE];
+    __shared__ rbmd::Real sample_imag[BLOCK_SIZE];
+
+    const rbmd::Id atom = blockIdx.x * blockDim.x + threadIdx.x;
+    const bool active = atom < num_atoms;
+    const rbmd::Real x = active ? __ldg(&px[atom]) : rbmd::Real(0);
+    const rbmd::Real y = active ? __ldg(&py[atom]) : rbmd::Real(0);
+    const rbmd::Real z = active ? __ldg(&pz[atom]) : rbmd::Real(0);
+    const rbmd::Real q = active ? __ldg(&charge[atom]) : rbmd::Real(0);
+    const rbmd::Real factor_a = -4 * M_PI * q;
+    const rbmd::Real volume = box._length[0] * box._length[1] * box._length[2];
     rbmd::Real sum_fx = 0;
     rbmd::Real sum_fy = 0;
     rbmd::Real sum_fz = 0;
 
-    __shared__ rbmd::Real shared_px[BLOCK_SIZE];
-    __shared__ rbmd::Real shared_py[BLOCK_SIZE];
-    __shared__ rbmd::Real shared_pz[BLOCK_SIZE];
-    __shared__ rbmd::Real shared_charge[BLOCK_SIZE];
-
-    unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid1 < num_atoms) {
-      if (threadIdx.x < BLOCK_SIZE) {
-        shared_px[threadIdx.x] = __ldg(&px[tid1]);
-        shared_py[threadIdx.x] = __ldg(&py[tid1]);
-        shared_pz[threadIdx.x] = __ldg(&pz[tid1]);
-        shared_charge[threadIdx.x] = __ldg(&charge[tid1]);
+    for (rbmd::Id base = 0; base < p_number;) {
+      const rbmd::Id count = MIN(rbmd::Id(BLOCK_SIZE), p_number - base);
+      if (threadIdx.x < count) {
+        const rbmd::Id sample = base + threadIdx.x;
+        // Preserve the original precision and expression order for K and |K|².
+        const rbmd::Real kx = 2 * M_PI * __ldg(&p_sample_x[sample]) / box._length[0];
+        const rbmd::Real ky = 2 * M_PI * __ldg(&p_sample_y[sample]) / box._length[1];
+        const rbmd::Real kz = 2 * M_PI * __ldg(&p_sample_z[sample]) / box._length[2];
+        const rbmd::Real k2 = kx * kx + ky * ky + kz * kz;
+        sample_kx[threadIdx.x] = kx;
+        sample_ky[threadIdx.x] = ky;
+        sample_kz[threadIdx.x] = kz;
+        sample_denominator[threadIdx.x] = volume * k2;
+        const rbmd::Real weight = mode_weights ? __ldg(&mode_weights[sample]) : rbmd::Real(1);
+        sample_real[threadIdx.x] = __ldg(&real_array[sample]) * weight;
+        sample_imag[threadIdx.x] = __ldg(&imag_array[sample]) * weight;
       }
       __syncthreads();
-      rbmd::Real p_x =  shared_px[threadIdx.x];
-      rbmd::Real p_y = shared_py[threadIdx.x];
-      rbmd::Real p_z = shared_pz[threadIdx.x];
-      rbmd::Real charge_i = shared_charge[threadIdx.x];
-      //
-      for (rbmd::Id i = 0; i < p_number; i++) {
-        const Real3 M = make_Real3(__ldg(&p_sample_x[i]), __ldg(&p_sample_y[i]), __ldg(&p_sample_z[i]));
-
-        const rbmd::Real rhok_real_i = __ldg(&real_array[i]);
-        const rbmd::Real rhok_imag_i = __ldg(&imag_array[i]);
-        //printf(" test--  %f %f",rhok_real_i,rhok_imag_i);
-
-        rbmd::Real force_rbe_x, force_rbe_y, force_rbe_z;
-        rbmd::Real force_rbe_single;
-        RBEForce(box, M, qqr2e, rhok_real_i, rhok_imag_i, charge_i, p_x, p_y, p_z,
-                 force_rbe_single,force_rbe_x, force_rbe_y, force_rbe_z);
-
-        sum_fx += force_rbe_x;
-        sum_fy += force_rbe_y;
-        sum_fz += force_rbe_z;
+      if (active) {
+        for (rbmd::Id i = 0; i < count; ++i) {
+          const rbmd::Real kx = sample_kx[i];
+          const rbmd::Real ky = sample_ky[i];
+          const rbmd::Real kz = sample_kz[i];
+          const rbmd::Real dot = kx * x + ky * y + kz * z;
+          const rbmd::Real factor_b = COS(dot) * sample_imag[i];
+          const rbmd::Real factor_c = SIN(dot) * sample_real[i];
+          rbmd::Real force = (factor_a / sample_denominator[i]) * (factor_b - factor_c);
+          force *= qqr2e;
+          sum_fx += force * kx;
+          sum_fy += force * ky;
+          sum_fz += force * kz;
+        }
       }
-      //
-      rbmd::Real sum_gauss = rbe_sum_gauss;
-      // printf("--------test---sum_gauss:%f\n",sum_gauss);
-
-      sum_fx = sum_fx * sum_gauss / p_number;
-      sum_fy = sum_fy * sum_gauss / p_number;
-      sum_fz = sum_fz * sum_gauss / p_number;
-
-      fx[tid1] = sum_fx;
-      fy[tid1] = sum_fy;
-      fz[tid1] = sum_fz;
+      base += count;
+      // Every thread has finished reading before the next tile overwrites it.
+      if (base < p_number) {
+        __syncthreads();
+      }
+    }
+    if (active) {
+      fx[atom] = mode_weights ? sum_fx : sum_fx * rbe_sum_gauss / p_number;
+      fy[atom] = mode_weights ? sum_fy : sum_fy * rbe_sum_gauss / p_number;
+      fz[atom] = mode_weights ? sum_fz : sum_fz * rbe_sum_gauss / p_number;
     }
   }
 
@@ -886,8 +903,8 @@ __global__ void ComputeRBEVirial0(
     }
 
     //
-    rbmd::Real total_real = blockReduceSum(local_real_sum);
-    rbmd::Real total_image = blockReduceSum(local_image_sum);
+    rbmd::Real total_real = blockReduceSum<0>(local_real_sum);
+    rbmd::Real total_image = blockReduceSum<1>(local_image_sum);
 
     //
     if (threadIdx.x == 0) {
@@ -929,8 +946,8 @@ __global__ void ComputeRBEVirial0(
     }
 
     //
-    rbmd::Real total_real = blockReduceSum(local_real_sum);
-    rbmd::Real total_image = blockReduceSum(local_image_sum);
+    rbmd::Real total_real = blockReduceSum<0>(local_real_sum);
+    rbmd::Real total_image = blockReduceSum<1>(local_image_sum);
 
     //
     if (threadIdx.x == 0) {
@@ -1487,10 +1504,11 @@ void ComputePnumberChargeStructureFactorOp<device::DEVICE_GPU>::operator()(
     const rbmd::Real* charge, const rbmd::Real* p_sample_x,
     const rbmd::Real* p_sample_y, const rbmd::Real* p_sample_z,
     const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
-    rbmd::Real* density_real, rbmd::Real* density_imag) {
+    rbmd::Real* density_real, rbmd::Real* density_imag,
+    STREAM_T stream) {
   const unsigned int blocks_per_grid = p_number;
   CHECK_KERNEL(ComputePnumberChargeStructureFactorOpt<<<blocks_per_grid,
-                                                     BLOCK_SIZE, 0, 0>>>(
+                                                     BLOCK_SIZE, 0, stream>>>(
       box, num_atoms, p_number, charge, p_sample_x, p_sample_y, p_sample_z, px,
       py, pz, density_real, density_imag));
    }
@@ -1504,13 +1522,14 @@ void ComputeRBEForceOp<device::DEVICE_GPU>::operator()(
     const rbmd::Real* charge, const rbmd::Real* p_sample_x,
     const rbmd::Real* p_sample_y, const rbmd::Real* p_sample_z,
     const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
-    rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz) {
+    rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
+    STREAM_T stream, const rbmd::Real* mode_weights) {
     unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    CHECK_KERNEL(ComputeRBEForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+    CHECK_KERNEL(ComputeRBEForce<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
         box, num_atoms, p_number, alpha, rbe_sum_gauss, qqr2e, real_array,
         imag_array, charge, p_sample_x, p_sample_y, p_sample_z, px, py, pz, fx,
-        fy, fz));
+        fy, fz, mode_weights));
   }
 
   void ComputeRBEForceVirialOp<device::DEVICE_GPU>::operator()(
@@ -1520,13 +1539,13 @@ void ComputeRBEForceOp<device::DEVICE_GPU>::operator()(
       const rbmd::Real* real_array, const rbmd::Real* imag_array,
       const rbmd::Real* p_sample_x, const rbmd::Real* p_sample_y,
       const rbmd::Real* p_sample_z, rbmd::Real* virial_tensor,
-      rbmd::Real* energy) {
+      rbmd::Real* energy, STREAM_T stream, const rbmd::Real* mode_weights) {
     unsigned int blocks_per_grid = (p_number + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    CHECK_KERNEL(ComputeRBEVirial0<<<1, BLOCK_SIZE, 0, 0>>>(
+    CHECK_KERNEL(ComputeRBEVirial0<<<1, BLOCK_SIZE, 0, stream>>>(
         box, p_number, alpha, rbe_sum_gauss, qqrd2e, qsqsum, qsum, real_array,
         imag_array, p_sample_x, p_sample_y, p_sample_z, virial_tensor,
-        energy));
+        energy, mode_weights));
   }
 
 void ComputePnumberChargeStructureFactorSOGOp<device::DEVICE_GPU>::operator()(

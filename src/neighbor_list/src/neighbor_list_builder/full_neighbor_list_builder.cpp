@@ -2,13 +2,18 @@
 #include "neighbor_list_builder/full_neighbor_list_builder.h"
 
 #include <thrust/host_vector.h>
+#include <thrust/copy.h>
+#include <thrust/fill.h>
+#include <thrust/sequence.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <limits>
 #include <output/include/Logger.hpp>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -160,15 +165,85 @@ rbmd::Id ClampNeighborOffset(rbmd::Id raw, std::size_t limit) {
   return static_cast<rbmd::Id>(capped > limit ? limit : capped);
 }
 
-rbmd::Id RequestedNeighborCellNum(const LinkedCell& linked_cell) {
-  return (2 * linked_cell._cell_count_within_cutoff + 1) *
-         (2 * linked_cell._cell_count_within_cutoff + 1) *
-         (2 * linked_cell._cell_count_within_cutoff + 1);
+rbmd::Id EffectiveNeighborCellNum(const LinkedCell& linked_cell) {
+  const rbmd::Id stencil_width =
+      2 * linked_cell._cell_count_within_cutoff + 1;
+  rbmd::Id result = 1;
+  for (int dim = 0; dim < 3; ++dim) {
+    const rbmd::Id available = linked_cell._covers_whole_domain[dim]
+                                   ? linked_cell._nativate_cells[dim]
+                                   : linked_cell._per_dimension_cells[dim];
+    result *= std::min(stencil_width, available);
+  }
+  return result;
+}
+
+bool CanUseCompactNeighborStencil(const LinkedCell& linked_cell) {
+  const rbmd::Id radius = linked_cell._cell_count_within_cutoff;
+  const rbmd::Id stencil_width = 2 * radius + 1;
+  if (radius <= 0 || !(linked_cell._neighbor_cutoff > rbmd::Real(0))) {
+    return false;
+  }
+  for (int dim = 0; dim < 3; ++dim) {
+    const rbmd::Id available = linked_cell._covers_whole_domain[dim]
+                                   ? linked_cell._nativate_cells[dim]
+                                   : linked_cell._per_dimension_cells[dim];
+    if (available < stencil_width ||
+        !(linked_cell._cell_length[dim] > rbmd::Real(0))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::vector<rbmd::Id> BuildNeighborStencilIndices(
+    const LinkedCell& linked_cell) {
+  const rbmd::Id full_stencil_size = EffectiveNeighborCellNum(linked_cell);
+  if (full_stencil_size <= 0) {
+    return {};
+  }
+
+  std::vector<rbmd::Id> stencil_indices;
+  stencil_indices.reserve(static_cast<std::size_t>(full_stencil_size));
+  if (!CanUseCompactNeighborStencil(linked_cell)) {
+    for (rbmd::Id idx = 0; idx < full_stencil_size; ++idx) {
+      stencil_indices.push_back(idx);
+    }
+    return stencil_indices;
+  }
+
+  const rbmd::Id radius = linked_cell._cell_count_within_cutoff;
+  const rbmd::Id stencil_width = 2 * radius + 1;
+  const rbmd::Real cutoff_sq =
+      linked_cell._neighbor_cutoff * linked_cell._neighbor_cutoff;
+  const auto axis_gap = [](rbmd::Id offset) {
+    return std::max<rbmd::Id>(std::abs(offset) - rbmd::Id(1), rbmd::Id(0));
+  };
+  for (rbmd::Id raw_idx = 0; raw_idx < full_stencil_size; ++raw_idx) {
+    const rbmd::Id offset_x = raw_idx % stencil_width - radius;
+    const rbmd::Id offset_y =
+        (raw_idx / stencil_width) % stencil_width - radius;
+    const rbmd::Id offset_z =
+        raw_idx / (stencil_width * stencil_width) - radius;
+    const rbmd::Real gap_x = static_cast<rbmd::Real>(axis_gap(offset_x)) *
+                             linked_cell._cell_length[0];
+    const rbmd::Real gap_y = static_cast<rbmd::Real>(axis_gap(offset_y)) *
+                             linked_cell._cell_length[1];
+    const rbmd::Real gap_z = static_cast<rbmd::Real>(axis_gap(offset_z)) *
+                             linked_cell._cell_length[2];
+    const rbmd::Real minimum_distance_sq =
+        gap_x * gap_x + gap_y * gap_y + gap_z * gap_z;
+    if (minimum_distance_sq < cutoff_sq) {
+      stencil_indices.push_back(raw_idx);
+    }
+  }
+  return stencil_indices;
 }
 
 void EmitNeighborDebugCsv(const LinkedCell& linked_cell,
                           const NeighborList& neighbor_list,
-                          const std::shared_ptr<DeviceData>& device_data) {
+                          const std::shared_ptr<DeviceData>& device_data,
+                          rbmd::Id neighbor_cell_num) {
   if (!device_data || !ShouldWriteNeighborDebug(test_current_step)) {
     return;
   }
@@ -522,10 +597,7 @@ void EmitNeighborDebugCsv(const LinkedCell& linked_cell,
     rbmd::Id first_nonempty_neighbor_cell = -1;
     rbmd::Id first_nonempty_range_count = -1;
     if (cell_idx >= 0 && static_cast<std::size_t>(cell_idx) < h_cells.size()) {
-      stencil_cell_count = RequestedNeighborCellNum(linked_cell);
-      if (stencil_cell_count > linked_cell._total_cells) {
-        stencil_cell_count = linked_cell._total_cells;
-      }
+      stencil_cell_count = neighbor_cell_num;
       stencil_nonempty_cells = 0;
       stencil_range_atom_count = 0;
       stencil_native_atom_count = 0;
@@ -625,13 +697,15 @@ void EmitNeighborDebugCsv(const LinkedCell& linked_cell,
 }  // namespace
 
 FullNeighborListBuilder::FullNeighborListBuilder() {
-  this->_neighbor_cell_num = RequestedNeighborCellNum(*_linked_cell);
+  this->_neighbor_cell_num = EffectiveNeighborCellNum(*_linked_cell);
   this->_neighbor_list =
       std::make_shared<NeighborList>(_linked_cell->_native_atoms_num, false);
   this->_device_data = DataManager::getInstance().getDeviceData();
+  this->_d_required_neighbor_capacity.resize(1);
   _trunc_distance_power_2 =
       //_linked_cell->_cutoff * _linked_cell->_cutoff - EPSILON;
       _linked_cell->_neighbor_cutoff * _linked_cell->_neighbor_cutoff;
+  EnsureNeighborCellsCurrent();
 }
 
 std::shared_ptr<NeighborList> FullNeighborListBuilder::Build() {
@@ -655,28 +729,28 @@ std::shared_ptr<NeighborList> FullNeighborListBuilder::Build() {
     this->should_realloc = true;
   }
 #endif
-  this->_neighbor_cell_num = RequestedNeighborCellNum(*_linked_cell);
   _linked_cell->AssignAtomsToCell();
   _linked_cell->SortAtomsByCellKey();
   _linked_cell->ComputeCellRangesIndices();
+  EnsureNeighborCellsCurrent();
   if (should_realloc) {
-    // 好像就第一入口调用了  todo move to init?
     EstimateNeighborsList();
   }
-  // 索引没有问题
-  if (GenerateNeighborsList() == RBMD_TRUE) {
+  while (GenerateNeighborsList() == RBMD_TRUE) {
     EstimateNeighborsList();
-    GenerateNeighborsList();
   }
   RecordNeighborBuildState(neighbor_cutoff);
 #ifdef USE_MPI
-  if (HasNeighborCache()) {
-    if (!GET_RBMD_PARALLEL->PrepareForwardCoordinateExchange()) {
+  // Distributed SHAKE needs the current halo's forward map even when
+  // skin == 0 disables neighbour-list reuse.
+  if (!GET_RBMD_PARALLEL->PrepareForwardCoordinateExchange()) {
+    if (HasNeighborCache()) {
       InvalidateNeighborCache();
     }
   }
 #endif
-  EmitNeighborDebugCsv(*_linked_cell, *this->_neighbor_list, _device_data);
+  EmitNeighborDebugCsv(*_linked_cell, *this->_neighbor_list, _device_data,
+                       _neighbor_cell_num);
   return _neighbor_list;
 }
 
@@ -703,44 +777,244 @@ std::shared_ptr<NeighborList> FullNeighborListBuilder::Build(
     this->should_realloc = true;
   }
 #endif
-  this->_neighbor_cell_num = RequestedNeighborCellNum(*_linked_cell);
   _linked_cell->AssignAtomsToCell();
   _linked_cell->SortAtomsByCellKey();
   _linked_cell->ComputeCellRangesIndices();
+  EnsureNeighborCellsCurrent();
   if (should_realloc) {
-    // 好像就第一入口调用了  todo move to init?
     EstimateNeighborsList();
   }
-  // 索引没有问题
-  if (GenerateNeighborsList() == RBMD_TRUE) {
+  while (GenerateNeighborsList() == RBMD_TRUE) {
     EstimateNeighborsList();
-    GenerateNeighborsList();
   }
   RecordNeighborBuildState(neighbor_cutoff);
 #ifdef USE_MPI
-  if (HasNeighborCache()) {
-    if (!GET_RBMD_PARALLEL->PrepareForwardCoordinateExchange()) {
+  // Distributed SHAKE needs the current halo's forward map even when
+  // skin == 0 disables neighbour-list reuse.
+  if (!GET_RBMD_PARALLEL->PrepareForwardCoordinateExchange()) {
+    if (HasNeighborCache()) {
       InvalidateNeighborCache();
     }
   }
 #endif
-  EmitNeighborDebugCsv(*_linked_cell, *this->_neighbor_list, _device_data);
+  EmitNeighborDebugCsv(*_linked_cell, *this->_neighbor_list, _device_data,
+                       _neighbor_cell_num);
   return _neighbor_list;
 }
 
+rbmd::Id FullNeighborListBuilder::ActiveAtomCount() const {
+  rbmd::Id active_atoms = _linked_cell->_total_atoms_num;
+#ifdef USE_MPI
+  active_atoms = _linked_cell->_native_atoms_num;
+#endif
+  return std::max<rbmd::Id>(active_atoms, 0);
+}
+
+rbmd::Id FullNeighborListBuilder::InitialNeighborCapacity(
+    rbmd::Real cutoff) const {
+  const rbmd::Real cell_volume = _linked_cell->_cell_length[0] *
+                                 _linked_cell->_cell_length[1] *
+                                 _linked_cell->_cell_length[2];
+  const rbmd::Real grid_volume =
+      cell_volume * static_cast<rbmd::Real>(_linked_cell->_total_cells);
+  rbmd::Real density = 0;
+  if (grid_volume > rbmd::Real(0)) {
+    density = static_cast<rbmd::Real>(_linked_cell->_total_atoms_num) /
+              grid_volume;
+  }
+  const rbmd::Real expected =
+      density * rbmd::Real(4.0 / 3.0) * RBMD_PI * cutoff * cutoff * cutoff;
+  rbmd::Id capacity = static_cast<rbmd::Id>(
+      std::ceil(static_cast<double>(expected * SAFE_ZONE)));
+  capacity = std::max<rbmd::Id>(capacity, MIN_NBNUM);
+  return (capacity + 3) & ~rbmd::Id(3);
+}
+
+rbmd::Id FullNeighborListBuilder::GrownNeighborCapacity(
+    rbmd::Id required) const {
+  const rbmd::Id grown = static_cast<rbmd::Id>(
+      std::ceil(static_cast<double>(required) * SAFE_ZONE));
+  return (std::max<rbmd::Id>(grown, MIN_NBNUM) + 3) & ~rbmd::Id(3);
+}
+
+rbmd::Id FullNeighborListBuilder::ChooseThreadsPerParticle() const {
+  const long long native_cells =
+      static_cast<long long>(_linked_cell->_nativate_cells[0]) *
+      static_cast<long long>(_linked_cell->_nativate_cells[1]) *
+      static_cast<long long>(_linked_cell->_nativate_cells[2]);
+  const rbmd::Id average_cell_occupancy = static_cast<rbmd::Id>(
+      _linked_cell->_total_atoms_num / std::max<long long>(native_cells, 1));
+  const long long estimated_work =
+      static_cast<long long>(average_cell_occupancy) *
+      static_cast<long long>(std::max<rbmd::Id>(_neighbor_cell_num, 1));
+  return ChooseThreadsPerParticle(
+      static_cast<rbmd::Id>(std::min<long long>(
+          estimated_work, std::numeric_limits<rbmd::Id>::max())),
+      "RBMD_VL_BUILD_TPP", rbmd::Id(1));
+}
+
+rbmd::Id FullNeighborListBuilder::ChooseThreadsPerParticle(
+    rbmd::Id estimated_work_items, const char* override_env,
+    rbmd::Id minimum_tpp) const {
+  const char* value =
+      override_env == nullptr ? nullptr : std::getenv(override_env);
+  if (value != nullptr && value[0] != '\0') {
+    const rbmd::Id requested = static_cast<rbmd::Id>(std::atoi(value));
+    switch (requested) {
+      case 1:
+      case 4:
+      case 8:
+      case 16:
+      case 32:
+#if WARP_SIZE_64
+      case WARP_SIZE:
+#endif
+        return requested;
+      default:
+        break;
+    }
+  }
+
+  // One logical group owns an atom. Neighbor construction is dominated by
+  // irregular memory traffic, so retain several dozen checks per lane before
+  // widening the group. This preserves latency-hiding across atoms while still
+  // widening exceptionally dense rows.
+  rbmd::Id threads_per_particle =
+      std::max<rbmd::Id>(minimum_tpp, rbmd::Id(1));
+  const rbmd::Id required_lanes =
+      std::max<rbmd::Id>(
+          (std::max<rbmd::Id>(estimated_work_items, 1) + 95) / 96,
+          rbmd::Id(1));
+  while (threads_per_particle < required_lanes &&
+         threads_per_particle < WARP_SIZE) {
+    threads_per_particle *= 2;
+  }
+  return std::min<rbmd::Id>(threads_per_particle, WARP_SIZE);
+}
+
+void FullNeighborListBuilder::PrepareFixedWidthList(
+    const std::shared_ptr<NeighborList>& list, rbmd::Id active_atoms,
+    rbmd::Id capacity) {
+  if (active_atoms < 0 || capacity <= 0) {
+    throw std::runtime_error("Invalid fixed-width neighbor-list dimensions");
+  }
+  if (list->_start_idx.size() < static_cast<std::size_t>(active_atoms)) {
+    list->resize(active_atoms);
+  }
+
+  const unsigned long long storage_size =
+      static_cast<unsigned long long>(active_atoms) *
+      static_cast<unsigned long long>(capacity);
+  if (storage_size >
+      static_cast<unsigned long long>(std::numeric_limits<rbmd::Id>::max())) {
+    throw std::overflow_error(
+        "Fixed-width neighbor-list index overflow: active_atoms=" +
+        std::to_string(active_atoms) + ", capacity=" +
+        std::to_string(capacity) + ", entries=" +
+        std::to_string(storage_size));
+  }
+
+  list->_max_neighbor_capacity = capacity;
+  list->_h_total_max_neighbor_num = static_cast<rbmd::Id>(storage_size);
+  list->_d_neighbors.resize(static_cast<std::size_t>(storage_size));
+  thrust::fill(list->_d_max_neighbor_num.begin(),
+               list->_d_max_neighbor_num.begin() + active_atoms, capacity);
+  thrust::fill(list->_d_neighbor_num.begin(),
+               list->_d_neighbor_num.begin() + active_atoms, rbmd::Id(0));
+  thrust::sequence(list->_start_idx.begin(),
+                   list->_start_idx.begin() + active_atoms, rbmd::Id(0),
+                   capacity);
+  thrust::copy(list->_start_idx.begin(),
+               list->_start_idx.begin() + active_atoms,
+               list->_end_idx.begin());
+}
+
+std::array<rbmd::Id, 14>
+FullNeighborListBuilder::NeighborCellGridSignature() const {
+  return {_linked_cell->_total_cells,
+          _linked_cell->_cell_count_within_cutoff,
+          _linked_cell->_per_dimension_cells[0],
+          _linked_cell->_per_dimension_cells[1],
+          _linked_cell->_per_dimension_cells[2],
+          _linked_cell->_nativate_cells[0],
+          _linked_cell->_nativate_cells[1],
+          _linked_cell->_nativate_cells[2],
+          _linked_cell->_nativate_cell_start[0],
+          _linked_cell->_nativate_cell_start[1],
+          _linked_cell->_nativate_cell_start[2],
+          static_cast<rbmd::Id>(_linked_cell->_covers_whole_domain[0]),
+          static_cast<rbmd::Id>(_linked_cell->_covers_whole_domain[1]),
+          static_cast<rbmd::Id>(_linked_cell->_covers_whole_domain[2])};
+}
+
+std::array<rbmd::Real, 4>
+FullNeighborListBuilder::NeighborStencilGeometrySignature() const {
+  return {_linked_cell->_cell_length[0], _linked_cell->_cell_length[1],
+          _linked_cell->_cell_length[2], _linked_cell->_neighbor_cutoff};
+}
+
+void FullNeighborListBuilder::EnsureNeighborCellsCurrent() {
+  const auto signature = NeighborCellGridSignature();
+  const auto geometry_signature = NeighborStencilGeometrySignature();
+  if (_neighbor_cells_valid && signature == _neighbor_cell_grid_signature &&
+      geometry_signature == _neighbor_stencil_geometry_signature &&
+      _neighbor_cell_num > 0 &&
+      _d_neighbor_stencil_indices.size() ==
+          static_cast<std::size_t>(_neighbor_cell_num) &&
+      _linked_cell->_neighbor_cell.size() ==
+          static_cast<std::size_t>(_linked_cell->_total_cells) *
+              static_cast<std::size_t>(_neighbor_cell_num)) {
+    return;
+  }
+  if (_linked_cell->_total_cells <= 0) {
+    throw std::runtime_error("Invalid linked-cell grid for neighbor stencil");
+  }
+
+  const std::vector<rbmd::Id> stencil_indices =
+      BuildNeighborStencilIndices(*_linked_cell);
+  const rbmd::Id compact_neighbor_cell_num =
+      static_cast<rbmd::Id>(stencil_indices.size());
+  if (compact_neighbor_cell_num <= 0) {
+    throw std::runtime_error("Empty linked-cell neighbor stencil");
+  }
+  const std::size_t required_size =
+      static_cast<std::size_t>(_linked_cell->_total_cells) *
+      static_cast<std::size_t>(compact_neighbor_cell_num);
+  thrust::host_vector<rbmd::Id> host_stencil(stencil_indices.begin(),
+                                              stencil_indices.end());
+  _d_neighbor_stencil_indices = host_stencil;
+  _neighbor_cell_num = compact_neighbor_cell_num;
+  ComputeNeighborCells();
+  if (_linked_cell->_neighbor_cell.size() != required_size) {
+    throw std::runtime_error("Neighbor-cell stencil storage size mismatch");
+  }
+  Logger::Instance().info(
+      "Neighbor stencil offsets: {} of {} (cell radius {})",
+      compact_neighbor_cell_num, EffectiveNeighborCellNum(*_linked_cell),
+      _linked_cell->_cell_count_within_cutoff);
+  _neighbor_cell_grid_signature = signature;
+  _neighbor_stencil_geometry_signature = geometry_signature;
+  _neighbor_cells_valid = true;
+}
+
 void FullNeighborListBuilder::ComputeNeighborCells() {
-  _linked_cell->_neighbor_cell.resize(
-      (_linked_cell->_total_cells * this->_neighbor_cell_num));
+  const std::size_t storage_size =
+      static_cast<std::size_t>(_linked_cell->_total_cells) *
+      static_cast<std::size_t>(this->_neighbor_cell_num);
+  _linked_cell->_neighbor_cell.resize(storage_size);
   op::ComputeFullNeighborsOp<device::DEVICE_GPU> compute_full_neighbors_op;
   compute_full_neighbors_op(
       thrust::raw_pointer_cast(_linked_cell->_neighbor_cell.data()),
       thrust::raw_pointer_cast(_linked_cell->_cells.data()),
       this->_neighbor_cell_num, _linked_cell->_total_cells,
-      _linked_cell->_cell_count_within_cutoff);
+      _linked_cell->_cell_count_within_cutoff,
+      thrust::raw_pointer_cast(_d_neighbor_stencil_indices.data()));
 }
 void FullNeighborListBuilder::ComputeNeighborCellsWithoutPBC() {
-  _linked_cell->_neighbor_cell.resize(
-      (_linked_cell->_total_cells * this->_neighbor_cell_num));
+  const std::size_t storage_size =
+      static_cast<std::size_t>(_linked_cell->_total_cells) *
+      static_cast<std::size_t>(this->_neighbor_cell_num);
+  _linked_cell->_neighbor_cell.resize(storage_size);
   op::ComputeFullNeighborsWithoutPBCOp<device::DEVICE_GPU>
       compute_full_neighbors_without_pbc_op;
   compute_full_neighbors_without_pbc_op(
@@ -750,41 +1024,14 @@ void FullNeighborListBuilder::ComputeNeighborCellsWithoutPBC() {
 
 void FullNeighborListBuilder::EstimateNeighborsList() {
   Logger::Instance().debug("Reallocating neighbor list capacity");
-  const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
-  rbmd::Id active_atoms = _linked_cell->_total_atoms_num;
-#ifdef USE_MPI
-  active_atoms = _linked_cell->_native_atoms_num;
-#endif
-  rbmd::Id* d_total_max_neighbor_num;
-  CHECK_RUNTIME(MALLOC(&d_total_max_neighbor_num, sizeof(rbmd::Id)));
-  CHECK_RUNTIME(MEMCPY(d_total_max_neighbor_num,
-                       &(_neighbor_list->_h_total_max_neighbor_num),
-                       sizeof(rbmd::Id), H2D));
-  op::EstimateFullNeighborListOp<device::DEVICE_GPU>
-      estimate_full_neighbor_list_op;
-  estimate_full_neighbor_list_op(
-      thrust::raw_pointer_cast(_linked_cell->_per_atom_cell_id.data()),
-      thrust::raw_pointer_cast(_linked_cell->_in_atom_list_start_index.data()),
-      thrust::raw_pointer_cast(_linked_cell->_in_atom_list_end_index.data()),
-      _trunc_distance_power_2, active_atoms,
-      thrust::raw_pointer_cast(_device_data->_d_px.data()),
-      thrust::raw_pointer_cast(_device_data->_d_py.data()),
-      thrust::raw_pointer_cast(_device_data->_d_pz.data()),
-      thrust::raw_pointer_cast(_linked_cell->_cell_sorted_atom_indices.data()),
-      thrust::raw_pointer_cast(this->_neighbor_list->_d_neighbor_num.data()),
-      thrust::raw_pointer_cast(
-          this->_neighbor_list->_d_max_neighbor_num.data()),
-      force_box, _linked_cell->GetDataPtr(), _neighbor_cell_num,
-      _linked_cell->_cell_count_within_cutoff);
-  ReductionSum(
-      thrust::raw_pointer_cast(_neighbor_list->_d_max_neighbor_num.data()),
-      d_total_max_neighbor_num, active_atoms);
-  CHECK_RUNTIME(MEMCPY(&(_neighbor_list->_h_total_max_neighbor_num),
-                       d_total_max_neighbor_num, sizeof(rbmd::Id), D2H));
-  CHECK_RUNTIME(FREE(d_total_max_neighbor_num));
-  _neighbor_list->_d_neighbors.resize(
-      _neighbor_list->_h_total_max_neighbor_num);
-  InitNeighborListIndices();
+  const rbmd::Id capacity =
+      _required_neighbor_capacity > _neighbor_list->_max_neighbor_capacity
+          ? GrownNeighborCapacity(_required_neighbor_capacity)
+          : std::max(_neighbor_list->_max_neighbor_capacity,
+                     InitialNeighborCapacity(
+                         std::sqrt(_trunc_distance_power_2)));
+  PrepareFixedWidthList(_neighbor_list, ActiveAtomCount(), capacity);
+  _required_neighbor_capacity = 0;
   this->should_realloc = false;
 }
 
@@ -792,10 +1039,15 @@ rbmd::Id FullNeighborListBuilder::GenerateNeighborsList() {
   const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
   CHECK_RUNTIME(MEMCPY(_d_should_realloc, &(this->should_realloc),
                        sizeof(rbmd::Id), H2D));
-  rbmd::Id active_atoms = _linked_cell->_total_atoms_num;
-#ifdef USE_MPI
-  active_atoms = _linked_cell->_native_atoms_num;
-#endif
+  const rbmd::Id zero = 0;
+  CHECK_RUNTIME(MEMCPY(
+      thrust::raw_pointer_cast(_d_required_neighbor_capacity.data()), &zero,
+      sizeof(rbmd::Id), H2D));
+  const rbmd::Id active_atoms = ActiveAtomCount();
+  if (active_atoms == 0) {
+    this->should_realloc = false;
+    return RBMD_FALSE;
+  }
   op::GenerateFullNeighborListOp<device::DEVICE_GPU>
       generate_full_neighbor_list_op;
   generate_full_neighbor_list_op(
@@ -807,14 +1059,21 @@ rbmd::Id FullNeighborListBuilder::GenerateNeighborsList() {
       thrust::raw_pointer_cast(_device_data->_d_py.data()),
       thrust::raw_pointer_cast(_device_data->_d_pz.data()),
       thrust::raw_pointer_cast(_linked_cell->_cell_sorted_atom_indices.data()),
-      thrust::raw_pointer_cast(
-          this->_neighbor_list->_d_max_neighbor_num.data()),
+      thrust::raw_pointer_cast(_linked_cell->_neighbor_cell.data()),
+      _neighbor_cell_num,
+      thrust::raw_pointer_cast(this->_neighbor_list->_d_neighbor_num.data()),
+      this->_neighbor_list->_max_neighbor_capacity,
       thrust::raw_pointer_cast(this->_neighbor_list->_start_idx.data()),
       thrust::raw_pointer_cast(this->_neighbor_list->_end_idx.data()),
       thrust::raw_pointer_cast(this->_neighbor_list->_d_neighbors.data()),
-      force_box, _d_should_realloc, _linked_cell->GetDataPtr(),
-      _neighbor_cell_num, _linked_cell->_cell_count_within_cutoff);
+      force_box, _d_should_realloc,
+      thrust::raw_pointer_cast(_d_required_neighbor_capacity.data()),
+      ChooseThreadsPerParticle());
   CHECK_RUNTIME(MEMCPY(&(this->should_realloc), _d_should_realloc,
                        sizeof(rbmd::Id), D2H));
+  CHECK_RUNTIME(MEMCPY(
+      &_required_neighbor_capacity,
+      thrust::raw_pointer_cast(_d_required_neighbor_capacity.data()),
+      sizeof(rbmd::Id), D2H));
   return this->should_realloc;
 }

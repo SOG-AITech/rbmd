@@ -1,5 +1,5 @@
 option(ENABLE_DOUBLE "Enable double, default float" OFF)
-option(ENABLE_64BIT_IDS "Enable long long, default int" OFF)
+option(ENABLE_64BIT_IDS "Use 64-bit atom IDs and legacy indices" ON)
 option(USE_ROCM "Use rocm: DCU or AMD" OFF)
 option(USE_CUDA "Use cuda: NVIDIA" OFF)
 option(USE_MPI "Enable MPI support" OFF)

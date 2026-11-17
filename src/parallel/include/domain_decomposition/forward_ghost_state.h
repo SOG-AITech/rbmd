@@ -7,6 +7,7 @@
 // packing/unpacking and periodic coordinate shifts.
 enum class ForwardGhostState : std::uint8_t {
   Coordinates = 0,
+  EamEmbeddingDerivative,
   PredictedPositionForward,
   CorrectedStateForward,
   VelocityForward,

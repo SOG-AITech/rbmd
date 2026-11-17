@@ -1,5 +1,7 @@
 #pragma once
+#include "common/atom_index_map.h"
 #include "../../common/device_types.h"
+#include "../../../common/rbmd_define.h"
 #include "../../common/types.h"
 #include "../../data_manager/include/model/box.h"
 
@@ -35,7 +37,8 @@ namespace op {
             rbmd::Real* fz,
             rbmd::Real* flat_virial,
             rbmd::Real* total_evdwl,
-            rbmd::Real* total_ecoul);
+            rbmd::Real* total_ecoul,
+            rbmd::Id threads_per_particle);
     };
 
     template <typename DEVICE>
@@ -58,6 +61,20 @@ namespace op {
         const rbmd::Id* id_verletlist,
         const rbmd::Id* id_random_neighbor,
         const rbmd::Id* random_neighbor_num,
+        const rbmd::Real* random_neighbor_weight,
+        bool fused_candidate_sampling,
+        const rbmd::Id* candidate_start,
+        const rbmd::Id* candidate_end,
+        const rbmd::Id* candidate_num,
+        const rbmd::Id* candidate_neighbors,
+        rbmd::Id candidate_capacity,
+        bool candidate_implicit_offsets,
+        rbmd::Id sample_epoch,
+        const rbmd::Real* coulomb_coeff,
+        rbmd::Real table_r2_min,
+        rbmd::Real table_scale,
+        rbmd::Id table_intervals,
+        const rbmd::Real* core_taylor,
         const int* nspecial,
         const rbmd::Id* special,
         int maxspecial,
@@ -70,7 +87,40 @@ namespace op {
         const rbmd::Real* pz,
         rbmd::Real* fx,
         rbmd::Real* fy,
-        rbmd::Real* fz);
+        rbmd::Real* fz,
+        rbmd::Real* force_sum,
+        rbmd::Id threads_per_particle);
+    };
+
+    template <typename DEVICE>
+    struct SumRblForcesOp
+    {
+      void operator()(
+        const rbmd::Id num_atoms,
+        rbmd::Real corr_x,
+        rbmd::Real corr_y,
+        rbmd::Real corr_z,
+        const rbmd::Real* force_ljcoul_x,
+        const rbmd::Real* force_ljcoul_y,
+        const rbmd::Real* force_ljcoul_z,
+        const rbmd::Real* force_kspace_x,
+        const rbmd::Real* force_kspace_y,
+        const rbmd::Real* force_kspace_z,
+        const rbmd::Real* force_bond_x,
+        const rbmd::Real* force_bond_y,
+        const rbmd::Real* force_bond_z,
+        const rbmd::Real* force_angle_x,
+        const rbmd::Real* force_angle_y,
+        const rbmd::Real* force_angle_z,
+        const rbmd::Real* force_dihedral_x,
+        const rbmd::Real* force_dihedral_y,
+        const rbmd::Real* force_dihedral_z,
+        const rbmd::Real* force_improper_x,
+        const rbmd::Real* force_improper_y,
+        const rbmd::Real* force_improper_z,
+        rbmd::Real* force_x,
+        rbmd::Real* force_y,
+        rbmd::Real* force_z);
     };
 
     template <typename DEVICE>
@@ -83,7 +133,7 @@ namespace op {
            const rbmd::Id* atoms_type,
            const rbmd::Id* atoms_id,
            const rbmd::Real* sigma,
-           const rbmd::Real* eps,
+           const rbmd::Real* eps, bool geometric_lj_mixing,
            const rbmd::Id* start_id,
            const rbmd::Id* end_id,
            const rbmd::Id* id_verletlist,
@@ -110,7 +160,7 @@ namespace op {
         const rbmd::Id num_atoms,
         const rbmd::Real qqr2e,
         const rbmd::Id* atoms_id,
-        const rbmd::Id* atom_id_to_idx,
+        rbmd::AtomIndexMapView atom_id_to_idx,
         const int* nspecial,
         const rbmd::Id* special,
         int maxspecial,
@@ -135,7 +185,7 @@ namespace op {
           Box box,
           const rbmd::Id num_atoms,
          const rbmd::Id num_bonds,
-         const rbmd::Id* atom_id_to_idx,
+         rbmd::AtomIndexMapView atom_id_to_idx,
          const rbmd::Real* bond_coeffs_k,
          const rbmd::Real* bond_coeffs_equilibrium,
          const rbmd::Id* bond_type,
@@ -160,7 +210,7 @@ namespace op {
           const rbmd::Id num_local_atoms,
           const rbmd::Id num_total_atoms,
           const rbmd::Id* atoms_id,
-          const rbmd::Id* atom_id_to_idx,
+          rbmd::AtomIndexMapView atom_id_to_idx,
           const rbmd::Id atom_id_to_idx_size,
           const rbmd::Real* bond_coeffs_k,
           int num_bond_types,
@@ -175,6 +225,7 @@ namespace op {
           rbmd::Real* fx,
           rbmd::Real* fy,
           rbmd::Real* fz,
+          rbmd::Real* flat_virial,
           rbmd::Real* energy_bond,
           unsigned long long* count_bond);
      };
@@ -186,7 +237,7 @@ namespace op {
         Box box,
         const rbmd::Id num_atoms,
        const rbmd::Id num_anglels,
-       const rbmd::Id* atom_id_to_idx,
+       rbmd::AtomIndexMapView atom_id_to_idx,
        const rbmd::Real* anglel_coeffs_k,
        const rbmd::Real* anglel_coeffs_equilibrium,
        const rbmd::Id* anglel_type,
@@ -212,7 +263,7 @@ namespace op {
         const rbmd::Id num_local_atoms,
         const rbmd::Id num_total_atoms,
         const rbmd::Id* atoms_id,
-        const rbmd::Id* atom_id_to_idx,
+        rbmd::AtomIndexMapView atom_id_to_idx,
         const rbmd::Real* anglel_coeffs_k,
         const rbmd::Real* anglel_coeffs_equilibrium,
         const int* d_num_angle,
@@ -227,6 +278,7 @@ namespace op {
         rbmd::Real* fx,
         rbmd::Real* fy,
         rbmd::Real* fz,
+        rbmd::Real* flat_virial,
         rbmd::Real* energy_angle,
         unsigned long long* count_angle);
      };
@@ -238,7 +290,7 @@ namespace op {
         Box box,
         const rbmd::Id num_atoms,
        const rbmd::Id num_dihedrals,
-       const rbmd::Id* atom_id_to_idx,
+       rbmd::AtomIndexMapView atom_id_to_idx,
        const rbmd::Real* dihedral_coeffs_k,
        const rbmd::Id* dihedral_coeffs_sign ,
        const rbmd::Id* dihedral_coeffs_multiplicity ,
@@ -266,7 +318,7 @@ namespace op {
 	       const rbmd::Id num_local_atoms,
 	       const rbmd::Id num_total_atoms,
 	       const rbmd::Id* atoms_id,
-	       const rbmd::Id* atom_id_to_idx,
+	       rbmd::AtomIndexMapView atom_id_to_idx,
 	       const rbmd::Real* dihedral_coeffs_k,
         const rbmd::Id* dihedral_coeffs_sign,
         const rbmd::Id* dihedral_coeffs_multiplicity,
@@ -296,7 +348,7 @@ namespace op {
        const rbmd::Id num_local_atoms,
        const rbmd::Id num_total_atoms,
        const rbmd::Id* atoms_id,
-       const rbmd::Id* atom_id_to_idx,
+       rbmd::AtomIndexMapView atom_id_to_idx,
        const rbmd::Real* dihedral_coeffs_k1,
        const rbmd::Real* dihedral_coeffs_k2,
        const rbmd::Real* dihedral_coeffs_k3,
@@ -326,7 +378,7 @@ namespace op {
      Box box,
      const rbmd::Id num_atoms,
     const rbmd::Id num_dihedrals,
-    const rbmd::Id* atom_id_to_idx,
+    rbmd::AtomIndexMapView atom_id_to_idx,
     const rbmd::Real* dihedral_coeffs_k1,
     const rbmd::Real* dihedral_coeffs_k2,
     const rbmd::Real* dihedral_coeffs_k3,
@@ -352,7 +404,7 @@ namespace op {
   {
     void operator()(
       Box box, const rbmd::Id num_atoms, const rbmd::Id num_dihedrals,
-      const rbmd::Id* atom_id_to_idx,
+      rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
       const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
       const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
@@ -369,7 +421,7 @@ namespace op {
   {
     void operator()(
       Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
-      const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* atoms_id, rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
       const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
       const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
@@ -389,7 +441,7 @@ namespace op {
          Box box,
          const rbmd::Id num_atoms,
         const rbmd::Id num_impropers,
-        const rbmd::Id* atom_id_to_idx,
+        rbmd::AtomIndexMapView atom_id_to_idx,
         const rbmd::Real* improper_coeffs_k,
         const rbmd::Real* improper_coeffs_chi,
         const rbmd::Id* improper_type,
@@ -414,7 +466,7 @@ struct ComputeImproperCVFFForceOp
      Box box,
      const rbmd::Id num_atoms,
     const rbmd::Id num_impropers,
-    const rbmd::Id* atom_id_to_idx,
+    rbmd::AtomIndexMapView atom_id_to_idx,
     const rbmd::Real* improper_coeffs_k,
     const rbmd::Id* improper_coeffs_d,
     const rbmd::Id* improper_coeffs_n,
@@ -441,7 +493,7 @@ struct ComputeImproperHarmonicPerAtomOp
 	     const rbmd::Id num_local_atoms,
 	     const rbmd::Id num_total_atoms,
 	     const rbmd::Id* atoms_id,
-	     const rbmd::Id* atom_id_to_idx,
+	     rbmd::AtomIndexMapView atom_id_to_idx,
 	     const rbmd::Real* improper_coeffs_k,
      const rbmd::Real* improper_coeffs_chi,
      const int* d_num_improper,
@@ -470,7 +522,7 @@ struct ComputeImproperCVFFPerAtomOp
 	     const rbmd::Id num_local_atoms,
 	     const rbmd::Id num_total_atoms,
 	     const rbmd::Id* atoms_id,
-	     const rbmd::Id* atom_id_to_idx,
+	     rbmd::AtomIndexMapView atom_id_to_idx,
 	     const rbmd::Real* improper_coeffs_k,
      const rbmd::Id* improper_coeffs_d,
      const rbmd::Id* improper_coeffs_n,
@@ -499,7 +551,7 @@ struct ComputeSpecialLJCutCoulForceUserOp
     const rbmd::Real rbsog_sigma,const rbmd::Real rbsog_b, const rbmd::Id rbsog_mmax,
     const rbmd::Real rbsog_w0,const rbmd::Real* taylor_coeff,
     const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
-    const rbmd::Real* sigma, const rbmd::Real* eps,
+    const rbmd::Real* sigma, const rbmd::Real* eps, bool geometric_lj_mixing,
     const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
     const int* nspecial, const rbmd::Id* special, int maxspecial,
     rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
@@ -549,7 +601,9 @@ struct ReduceVirialOp
           rbmd::Real* fz,
           rbmd::Real* flat_virial,
           rbmd::Real* total_evdwl,
-          rbmd::Real* total_ecoul);
+          rbmd::Real* total_ecoul,
+          rbmd::Id threads_per_particle,
+          STREAM_T stream = nullptr);
   };
 
 
@@ -573,6 +627,20 @@ struct ReduceVirialOp
      const rbmd::Id* id_verletlist,
      const rbmd::Id* id_random_neighbor,
      const rbmd::Id* random_neighbor_num,
+     const rbmd::Real* random_neighbor_weight,
+        bool fused_candidate_sampling,
+        const rbmd::Id* candidate_start,
+        const rbmd::Id* candidate_end,
+        const rbmd::Id* candidate_num,
+        const rbmd::Id* candidate_neighbors,
+        rbmd::Id candidate_capacity,
+        bool candidate_implicit_offsets,
+        rbmd::Id sample_epoch,
+     const rbmd::Real* coulomb_coeff,
+     rbmd::Real table_r2_min,
+     rbmd::Real table_scale,
+     rbmd::Id table_intervals,
+     const rbmd::Real* core_taylor,
      const int* nspecial,
      const rbmd::Id* special,
      int maxspecial,
@@ -585,7 +653,42 @@ struct ReduceVirialOp
      const rbmd::Real* pz,
      rbmd::Real* fx,
      rbmd::Real* fy,
-     rbmd::Real* fz);
+     rbmd::Real* fz,
+     rbmd::Real* force_sum,
+     rbmd::Id threads_per_particle,
+     STREAM_T stream = nullptr);
+  };
+
+  template <>
+  struct SumRblForcesOp<device::DEVICE_GPU>
+  {
+    void operator()(
+      const rbmd::Id num_atoms,
+      rbmd::Real corr_x,
+      rbmd::Real corr_y,
+      rbmd::Real corr_z,
+      const rbmd::Real* force_ljcoul_x,
+      const rbmd::Real* force_ljcoul_y,
+      const rbmd::Real* force_ljcoul_z,
+      const rbmd::Real* force_kspace_x,
+      const rbmd::Real* force_kspace_y,
+      const rbmd::Real* force_kspace_z,
+      const rbmd::Real* force_bond_x,
+      const rbmd::Real* force_bond_y,
+      const rbmd::Real* force_bond_z,
+      const rbmd::Real* force_angle_x,
+      const rbmd::Real* force_angle_y,
+      const rbmd::Real* force_angle_z,
+      const rbmd::Real* force_dihedral_x,
+      const rbmd::Real* force_dihedral_y,
+      const rbmd::Real* force_dihedral_z,
+      const rbmd::Real* force_improper_x,
+      const rbmd::Real* force_improper_y,
+      const rbmd::Real* force_improper_z,
+      rbmd::Real* force_x,
+      rbmd::Real* force_y,
+      rbmd::Real* force_z,
+      STREAM_T stream = nullptr);
   };
 
 
@@ -600,7 +703,7 @@ struct ReduceVirialOp
          const rbmd::Id* atoms_type,
          const rbmd::Id* atoms_id,
          const rbmd::Real* sigma,
-         const rbmd::Real* eps,
+         const rbmd::Real* eps, bool geometric_lj_mixing,
          const rbmd::Id* start_id,
          const rbmd::Id* end_id,
          const rbmd::Id* id_verletlist,
@@ -616,7 +719,8 @@ struct ReduceVirialOp
          const rbmd::Real* pz,
          rbmd::Real* flat_virial,
          rbmd::Real* total_evdwl,
-         rbmd::Real* total_ecoul);
+         rbmd::Real* total_ecoul,
+         STREAM_T stream = nullptr);
   };
 
 
@@ -628,7 +732,7 @@ struct ReduceVirialOp
       const rbmd::Id num_atoms,
       const rbmd::Real qqr2e,
       const rbmd::Id* atoms_id,
-      const rbmd::Id* atom_id_to_idx,
+      rbmd::AtomIndexMapView atom_id_to_idx,
       const int* nspecial,
       const rbmd::Id* special,
       int maxspecial,
@@ -653,7 +757,7 @@ struct ReduceVirialOp
        Box box,
        const rbmd::Id num_atoms,
       const rbmd::Id num_bonds,
-      const rbmd::Id* atom_id_to_idx,
+      rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Real* bond_coeffs_k,
       const rbmd::Real* bond_coeffs_equilibrium,
       const rbmd::Id* bond_type,
@@ -667,7 +771,8 @@ struct ReduceVirialOp
       rbmd::Real* fz,
       rbmd::Real* flat_virial,
       rbmd::Real* global_virial,
-      rbmd::Real* energy_bond);
+      rbmd::Real* energy_bond,
+      STREAM_T stream = nullptr);
   };
 
   template <>
@@ -678,7 +783,7 @@ struct ReduceVirialOp
        const rbmd::Id num_local_atoms,
        const rbmd::Id num_total_atoms,
        const rbmd::Id* atoms_id,
-       const rbmd::Id* atom_id_to_idx,
+       rbmd::AtomIndexMapView atom_id_to_idx,
        const rbmd::Id atom_id_to_idx_size,
        const rbmd::Real* bond_coeffs_k,
        int num_bond_types,
@@ -693,8 +798,10 @@ struct ReduceVirialOp
        rbmd::Real* fx,
        rbmd::Real* fy,
        rbmd::Real* fz,
+       rbmd::Real* flat_virial,
        rbmd::Real* energy_bond,
-       unsigned long long* count_bond);
+       unsigned long long* count_bond,
+       STREAM_T stream = nullptr);
   };
 
 
@@ -705,7 +812,7 @@ struct ReduceVirialOp
      Box box,
      const rbmd::Id num_atoms,
     const rbmd::Id num_anglels,
-    const rbmd::Id* atom_id_to_idx,
+    rbmd::AtomIndexMapView atom_id_to_idx,
     const rbmd::Real* anglel_coeffs_k,
     const rbmd::Real* anglel_coeffs_equilibrium,
     const rbmd::Id* anglel_type,
@@ -720,7 +827,8 @@ struct ReduceVirialOp
     rbmd::Real* fz,
     rbmd::Real* flat_virial,
     rbmd::Real* global_virial,
-    rbmd::Real* energy_angle);
+    rbmd::Real* energy_angle,
+    STREAM_T stream = nullptr);
   };
 
   template <>
@@ -731,7 +839,7 @@ struct ReduceVirialOp
      const rbmd::Id num_local_atoms,
      const rbmd::Id num_total_atoms,
      const rbmd::Id* atoms_id,
-     const rbmd::Id* atom_id_to_idx,
+     rbmd::AtomIndexMapView atom_id_to_idx,
      const rbmd::Real* anglel_coeffs_k,
      const rbmd::Real* anglel_coeffs_equilibrium,
      const int* d_num_angle,
@@ -746,8 +854,10 @@ struct ReduceVirialOp
      rbmd::Real* fx,
      rbmd::Real* fy,
      rbmd::Real* fz,
+     rbmd::Real* flat_virial,
      rbmd::Real* energy_angle,
-     unsigned long long* count_angle);
+     unsigned long long* count_angle,
+     STREAM_T stream = nullptr);
   };
 
   template <>
@@ -757,7 +867,7 @@ struct ReduceVirialOp
        Box box,
        const rbmd::Id num_atoms,
       const rbmd::Id num_dihedrals,
-      const rbmd::Id* atom_id_to_idx,
+      rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Real* dihedral_coeffs_k,
       const rbmd::Id* dihedral_coeffs_sign ,
       const rbmd::Id* dihedral_coeffs_multiplicity ,
@@ -774,7 +884,8 @@ struct ReduceVirialOp
       rbmd::Real* fz,
       rbmd::Real* flat_virial,
       rbmd::Real* global_virial,
-      rbmd::Real* energy_dihedral);
+      rbmd::Real* energy_dihedral,
+      STREAM_T stream = nullptr);
   };
 
   template <>
@@ -785,7 +896,7 @@ struct ReduceVirialOp
 	       const rbmd::Id num_local_atoms,
 	       const rbmd::Id num_total_atoms,
 	       const rbmd::Id* atoms_id,
-	       const rbmd::Id* atom_id_to_idx,
+	       rbmd::AtomIndexMapView atom_id_to_idx,
 	       const rbmd::Real* dihedral_coeffs_k,
        const rbmd::Id* dihedral_coeffs_sign,
        const rbmd::Id* dihedral_coeffs_multiplicity,
@@ -804,7 +915,8 @@ struct ReduceVirialOp
        rbmd::Real* fz,
        rbmd::Real* flat_virial,
        rbmd::Real* energy_dihedral,
-       unsigned long long* count_dihedral);
+       unsigned long long* count_dihedral,
+       STREAM_T stream = nullptr);
   };
 
   template <>
@@ -815,7 +927,7 @@ struct ReduceVirialOp
        const rbmd::Id num_local_atoms,
        const rbmd::Id num_total_atoms,
        const rbmd::Id* atoms_id,
-       const rbmd::Id* atom_id_to_idx,
+       rbmd::AtomIndexMapView atom_id_to_idx,
        const rbmd::Real* dihedral_coeffs_k1,
        const rbmd::Real* dihedral_coeffs_k2,
        const rbmd::Real* dihedral_coeffs_k3,
@@ -835,7 +947,8 @@ struct ReduceVirialOp
        rbmd::Real* fz,
        rbmd::Real* flat_virial,
        rbmd::Real* energy_dihedral,
-       unsigned long long* count_dihedral);
+       unsigned long long* count_dihedral,
+       STREAM_T stream = nullptr);
   };
 
   template <>
@@ -845,7 +958,7 @@ struct ReduceVirialOp
        Box box,
        const rbmd::Id num_atoms,
       const rbmd::Id num_dihedrals,
-      const rbmd::Id* atom_id_to_idx,
+      rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Real* dihedral_coeffs_k1,
       const rbmd::Real* dihedral_coeffs_k2,
       const rbmd::Real* dihedral_coeffs_k3,
@@ -863,7 +976,8 @@ struct ReduceVirialOp
       rbmd::Real* fz,
       rbmd::Real* flat_virial,
       rbmd::Real* global_virial,
-      rbmd::Real* energy_dihedral);
+      rbmd::Real* energy_dihedral,
+      STREAM_T stream = nullptr);
   };
 
   template <>
@@ -871,7 +985,7 @@ struct ReduceVirialOp
   {
     void operator()(
       Box box, const rbmd::Id num_atoms, const rbmd::Id num_dihedrals,
-      const rbmd::Id* atom_id_to_idx,
+      rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
       const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
       const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
@@ -880,7 +994,8 @@ struct ReduceVirialOp
       const rbmd::Id* dihedrallistw, const rbmd::Real* px, const rbmd::Real* py,
       const rbmd::Real* pz,rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
       rbmd::Real* flat_virial, rbmd::Real* global_virial,
-      rbmd::Real* energy_dihedral);
+      rbmd::Real* energy_dihedral,
+      STREAM_T stream = nullptr);
   };
 
   template <>
@@ -888,7 +1003,7 @@ struct ReduceVirialOp
   {
     void operator()(
       Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
-      const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* atoms_id, rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
       const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
       const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
@@ -898,7 +1013,8 @@ struct ReduceVirialOp
       int dihedral_per_atom, const rbmd::Real* px, const rbmd::Real* py,
       const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
       rbmd::Real* flat_virial, rbmd::Real* energy_dihedral,
-      unsigned long long* count_dihedral);
+      unsigned long long* count_dihedral,
+      STREAM_T stream = nullptr);
   };
 
   template <>
@@ -908,7 +1024,7 @@ struct ReduceVirialOp
          Box box,
        const rbmd::Id num_atoms,
       const rbmd::Id num_impropers,
-      const rbmd::Id* atom_id_to_idx,
+      rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Real* improper_coeffs_k,
       const rbmd::Real* improper_coeffs_chi,
       const rbmd::Id* improper_type,
@@ -923,7 +1039,8 @@ struct ReduceVirialOp
       rbmd::Real* fy,
       rbmd::Real* fz,
       rbmd::Real* flat_virial,
-      rbmd::Real* energy_improper);
+      rbmd::Real* energy_improper,
+      STREAM_T stream = nullptr);
   };
 
 template <>
@@ -933,7 +1050,7 @@ struct ComputeImproperCVFFForceOp<device::DEVICE_GPU>
      Box box,
      const rbmd::Id num_atoms,
     const rbmd::Id num_impropers,
-    const rbmd::Id* atom_id_to_idx,
+    rbmd::AtomIndexMapView atom_id_to_idx,
     const rbmd::Real* improper_coeffs_k,
     const rbmd::Id* improper_coeffs_d,
     const rbmd::Id* improper_coeffs_n,
@@ -949,7 +1066,8 @@ struct ComputeImproperCVFFForceOp<device::DEVICE_GPU>
     rbmd::Real* fy,
     rbmd::Real* fz,
     rbmd::Real* flat_virial,
-    rbmd::Real* energy_improper);
+    rbmd::Real* energy_improper,
+    STREAM_T stream = nullptr);
 };
 
 template <>
@@ -960,7 +1078,7 @@ struct ComputeImproperHarmonicPerAtomOp<device::DEVICE_GPU>
 	     const rbmd::Id num_local_atoms,
 	     const rbmd::Id num_total_atoms,
 	     const rbmd::Id* atoms_id,
-	     const rbmd::Id* atom_id_to_idx,
+	     rbmd::AtomIndexMapView atom_id_to_idx,
 	     const rbmd::Real* improper_coeffs_k,
      const rbmd::Real* improper_coeffs_chi,
      const int* d_num_improper,
@@ -978,7 +1096,8 @@ struct ComputeImproperHarmonicPerAtomOp<device::DEVICE_GPU>
 	     rbmd::Real* fz,
 	     rbmd::Real* flat_virial,
 	     rbmd::Real* energy_improper,
-	     unsigned long long* count_improper);
+	     unsigned long long* count_improper,
+	     STREAM_T stream = nullptr);
 	};
 
 template <>
@@ -989,7 +1108,7 @@ struct ComputeImproperCVFFPerAtomOp<device::DEVICE_GPU>
 	     const rbmd::Id num_local_atoms,
 	     const rbmd::Id num_total_atoms,
 	     const rbmd::Id* atoms_id,
-	     const rbmd::Id* atom_id_to_idx,
+	     rbmd::AtomIndexMapView atom_id_to_idx,
 	     const rbmd::Real* improper_coeffs_k,
      const rbmd::Id* improper_coeffs_d,
      const rbmd::Id* improper_coeffs_n,
@@ -1008,14 +1127,16 @@ struct ComputeImproperCVFFPerAtomOp<device::DEVICE_GPU>
      rbmd::Real* fz,
      rbmd::Real* flat_virial,
      rbmd::Real* energy_improper,
-     unsigned long long* count_improper);
+     unsigned long long* count_improper,
+     STREAM_T stream = nullptr);
 };
 
 template <>
 struct ReduceVirialOp<device::DEVICE_GPU>
 {
   void operator()(const rbmd::Id num_atoms,const rbmd::Id pitch,
-        const rbmd::Real* d_flat_virial_atom,rbmd::Real* d_virial);
+        const rbmd::Real* d_flat_virial_atom,rbmd::Real* d_virial,
+        STREAM_T stream = nullptr);
 };
 
 template <>
@@ -1025,7 +1146,7 @@ struct ComputeSpecialLJCutCoulForceUserOp<device::DEVICE_GPU>
     const rbmd::Real rbsog_sigma,const rbmd::Real rbsog_b, const rbmd::Id rbsog_mmax,
     const rbmd::Real rbsog_w0,const rbmd::Real* taylor_coeff,
     const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
-    const rbmd::Real* sigma, const rbmd::Real* eps,
+    const rbmd::Real* sigma, const rbmd::Real* eps, bool geometric_lj_mixing,
     const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
     const int* nspecial, const rbmd::Id* special, int maxspecial,
     rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,

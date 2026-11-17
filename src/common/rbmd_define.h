@@ -43,6 +43,7 @@
 
 
 #include "types.h"
+#include "atom_index_map.h"
 #if USE_DOUBLE
 #define EPSILON 0.0001
 #define RBMD_PI 3.14159265358979323846
@@ -69,11 +70,8 @@
 #define LEAVING_TAG 1001
 #define HALO_TAG 1002
 
-#ifndef TARGET_DCU
 #define MIN_NBNUM \
-(128)  /// CUDA AMD6800xt 96 DCU 128   TODO kernel us it  can use warpSize?
-#define WARP_SIZE (32)  /// CUDA AMD6800xt 32  DCU 64   TODO
-#else
+(128)
 #if !defined(WARP_SIZE_64)
 #error "WARP_SIZE_64 must be defined by CMake as 0 or 1."
 #endif
@@ -82,7 +80,6 @@
 #define WARP_SIZE (64)
 #else
 #define WARP_SIZE (32)
-#endif
 #endif
 
 // #define MIN_NBNUM (96)
@@ -216,6 +213,9 @@ typedef float7 Real7;
 
 #if USE_64BIT_IDS
 typedef longlong3 Int3;
+typedef longlong3 Id3;
+typedef longlong2 Id2;
+#define INT_DATA(vec) (const_cast<long long*>(reinterpret_cast<const long long*>(&(vec))))
 #define make_Int3 make_longlong3
 #else
   #if defined(__ROCM)
@@ -294,15 +294,24 @@ typedef int2 Id2;
     #define STREAM cudaStream_t
     using STREAM_T = cudaStream_t;
     #define STREAM_CREATE  cudaStreamCreate
+    #define STREAM_CREATE_WITH_FLAGS cudaStreamCreateWithFlags
+    #define STREAM_NON_BLOCKING cudaStreamNonBlocking
+    #define STREAM_WAIT_EVENT(stream, event) cudaStreamWaitEvent(stream, event, 0)
     #define MEMCPY_ASYNC cudaMemcpyAsync
+    #define MEMSET_ASYNC cudaMemsetAsync
     #define STREAM_SYNC    cudaStreamSynchronize
     #define STREAM_DESTORY cudaStreamDestroy
     #define STREAM_DESTROY cudaStreamDestroy
     #define NEW_FLAG_EVENT cudaEventCreateWithFlags
+    #define NEW_EVENT cudaEventCreate
     #define EVENT_DISABLE cudaEventDisableTiming
     #define EVENT_DESTORY cudaEventDestroy
+    #define EVENT_DESTROY cudaEventDestroy
     #define EVENT_RECORD cudaEventRecord
     #define EVENT_SYNC cudaEventSynchronize
+    #define EVENT_QUERY cudaEventQuery
+    #define EVENT_NOT_READY cudaErrorNotReady
+    #define EVENT_ELAPSED_TIME cudaEventElapsedTime
     #define EVENT_T cudaEvent_t
 
 
@@ -338,15 +347,24 @@ typedef int2 Id2;
     #define STREAM hipStream_t
     using STREAM_T = hipStream_t;
     #define STREAM_CREATE  hipStreamCreate
+    #define STREAM_CREATE_WITH_FLAGS hipStreamCreateWithFlags
+    #define STREAM_NON_BLOCKING hipStreamNonBlocking
+    #define STREAM_WAIT_EVENT(stream, event) hipStreamWaitEvent(stream, event, 0)
     #define MEMCPY_ASYNC hipMemcpyAsync
+    #define MEMSET_ASYNC hipMemsetAsync
     #define STREAM_SYNC hipStreamSynchronize
     #define STREAM_DESTORY hipStreamDestroy
     #define STREAM_DESTROY hipStreamDestroy
     #define NEW_FLAG_EVENT hipEventCreateWithFlags
+    #define NEW_EVENT hipEventCreate
     #define EVENT_DISABLE hipEventDisableTiming
     #define EVENT_DESTORY hipEventDestroy
+    #define EVENT_DESTROY hipEventDestroy
     #define EVENT_RECORD hipEventRecord
     #define EVENT_SYNC hipEventSynchronize
+    #define EVENT_QUERY hipEventQuery
+    #define EVENT_NOT_READY hipErrorNotReady
+    #define EVENT_ELAPSED_TIME hipEventElapsedTime
     #define EVENT_T hipEvent_t
 
 

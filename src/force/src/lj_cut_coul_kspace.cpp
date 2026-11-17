@@ -1,7 +1,9 @@
+#include "common/revision_timing.h"
 #include "lj_cut_coul_kspace.h"
 #include "force_box_selector.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -17,7 +19,11 @@
 #include <unistd.h>
 #endif
 
+#include <thrust/find.h>
+#include <thrust/fill.h>
 #include <thrust/host_vector.h>
+#include <thrust/iterator/zip_iterator.h>
+#include <thrust/tuple.h>
 
 #include "../../common/device_types.h"
 #include "../../common/rbmd_define.h"
@@ -45,9 +51,39 @@ extern std::map<std::string, UNIT> unit_factor_map;
 
 namespace {
 
+using RBLForceSum =
+    thrust::tuple<rbmd::Real, rbmd::Real, rbmd::Real>;
+
+struct AddRBLForceSum {
+  __host__ __device__ RBLForceSum operator()(const RBLForceSum& lhs,
+                                             const RBLForceSum& rhs) const {
+    return thrust::make_tuple(thrust::get<0>(lhs) + thrust::get<0>(rhs),
+                              thrust::get<1>(lhs) + thrust::get<1>(rhs),
+                              thrust::get<2>(lhs) + thrust::get<2>(rhs));
+  }
+};
+
 bool EnvFlagEnabled(const char* name) {
   const char* value = std::getenv(name);
   return value != nullptr && value[0] != '\0' && std::string(value) != "0";
+}
+
+void LogLJHipMemory(const char* stage) {
+  if (!EnvFlagEnabled("RBMD_HIP_MEMORY_DIAG")) {
+    return;
+  }
+  (void)DEVICESYNC();
+  std::size_t free_bytes = 0;
+  std::size_t total_bytes = 0;
+  const ERROR_T status = MEMGETINFO(&free_bytes, &total_bytes);
+  if (status != SUCCESS) {
+    Logger::Instance().info("RBMD-HIP-MEM component=lj stage={} status={}",
+                            stage, GETERRORSTRING(status));
+    return;
+  }
+  Logger::Instance().info(
+      "RBMD-HIP-MEM component=lj stage={} free_bytes={} used_bytes={} total_bytes={}",
+      stage, free_bytes, total_bytes, total_bytes - free_bytes);
 }
 
 int EnvIntOrDefault(const char* name, int fallback) {
@@ -387,6 +423,174 @@ void EmitPairSpikeDebugCsv(const std::shared_ptr<DeviceData>& device_data,
   append_row(max_pair_force);
 }
 
+struct NeighborRowAudit {
+  bool valid{false};
+  rbmd::Id count{-1};
+  rbmd::Id written{-1};
+  bool contains{false};
+};
+
+bool ShouldWritePairMembershipDebug(rbmd::Id step) {
+  static const bool enabled =
+      EnvFlagEnabled("RBMD_DEBUG_PAIR_MEMBERSHIP");
+  static const int first_step =
+      EnvIntOrDefault("RBMD_DEBUG_PAIR_MEMBERSHIP_START", 190);
+  static const int last_step =
+      EnvIntOrDefault("RBMD_DEBUG_PAIR_MEMBERSHIP_END", 207);
+  return enabled && step >= first_step && step <= last_step;
+}
+
+template <typename DeviceVector>
+rbmd::Id FindGidIndex(const DeviceVector& ids, rbmd::Id atom_count,
+                      rbmd::Id target_gid) {
+  const std::size_t limit = std::min<std::size_t>(
+      static_cast<std::size_t>(std::max<rbmd::Id>(atom_count, 0)),
+      ids.size());
+  const auto end = ids.begin() + limit;
+  const auto found = thrust::find(ids.begin(), end, target_gid);
+  return found == end ? rbmd::Id(-1)
+                      : static_cast<rbmd::Id>(found - ids.begin());
+}
+
+NeighborRowAudit InspectNeighborRow(
+    const std::shared_ptr<NeighborList>& list, rbmd::Id center_idx,
+    rbmd::Id partner_idx, bool implicit_offsets) {
+  NeighborRowAudit audit;
+  if (!list || center_idx < 0 || partner_idx < 0 ||
+      static_cast<std::size_t>(center_idx) >=
+          list->_d_neighbor_num.size() ||
+      list->_max_neighbor_capacity <= 0) {
+    return audit;
+  }
+
+  audit.count = list->_d_neighbor_num[static_cast<std::size_t>(center_idx)];
+  audit.written = std::min(std::max(audit.count, rbmd::Id(0)),
+                           list->_max_neighbor_capacity);
+  std::size_t row_start = 0;
+  if (implicit_offsets) {
+    row_start = static_cast<std::size_t>(center_idx) *
+                static_cast<std::size_t>(list->_max_neighbor_capacity);
+  } else {
+    if (static_cast<std::size_t>(center_idx) >= list->_start_idx.size()) {
+      return audit;
+    }
+    const rbmd::Id raw_start =
+        list->_start_idx[static_cast<std::size_t>(center_idx)];
+    if (raw_start < 0) {
+      return audit;
+    }
+    row_start = static_cast<std::size_t>(raw_start);
+  }
+
+  const std::size_t row_end =
+      row_start + static_cast<std::size_t>(audit.written);
+  if (row_end > list->_d_neighbors.size()) {
+    return audit;
+  }
+  const auto begin = list->_d_neighbors.begin() + row_start;
+  const auto end = list->_d_neighbors.begin() + row_end;
+  audit.contains = thrust::find(begin, end, partner_idx) != end;
+  audit.valid = true;
+  return audit;
+}
+
+void EmitTrackedPairMembershipCsv(
+    const std::shared_ptr<DeviceData>& device_data,
+    const std::shared_ptr<NeighborList>& neighbor_list,
+    const std::shared_ptr<LinkedCell>& linked_cell, const Box& force_box,
+    rbmd::Id nlocal) {
+  if (!device_data || !neighbor_list || !linked_cell ||
+      !ShouldWritePairMembershipDebug(test_current_step)) {
+    return;
+  }
+
+  constexpr std::array<std::array<rbmd::Id, 2>, 4> tracked_pairs{{
+      {{9446364, 9545526}},
+      {{9545526, 9446364}},
+      {{10446364, 10545526}},
+      {{10545526, 10446364}},
+  }};
+  const rbmd::Id safe_nlocal = std::max<rbmd::Id>(nlocal, 0);
+  const rbmd::Id safe_ntotal =
+      std::max<rbmd::Id>(linked_cell->_total_atoms_num, 0);
+  const auto candidate_list = neighbor_list->_rbl_candidate_list;
+
+  EnsurePairSpikeDebugLogDirectory();
+  const int rank = CurrentRank();
+  const int pid = CurrentProcessId();
+  const std::string filename = "logs/debug/rbl_pair_membership_rank" +
+                               std::to_string(rank) + "_pid" +
+                               std::to_string(pid) + ".csv";
+  std::ofstream csv(filename, std::ios::app);
+  if (!csv.is_open()) {
+    return;
+  }
+  if (csv.tellp() == 0) {
+    csv << "step,rank,center_gid,partner_gid,center_idx,partner_idx,"
+           "center_region,partner_region,distance_sq,center_cell,"
+           "partner_cell,candidate_valid,candidate_count,"
+           "candidate_written,candidate_contains,core_valid,core_count,"
+           "core_written,core_contains\n";
+  }
+
+  for (const auto& pair : tracked_pairs) {
+    const rbmd::Id center_gid = pair[0];
+    const rbmd::Id partner_gid = pair[1];
+    const rbmd::Id center_idx = FindGidIndex(
+        device_data->_d_atoms_id, safe_ntotal, center_gid);
+    const rbmd::Id partner_idx = FindGidIndex(
+        device_data->_d_atoms_id, safe_ntotal, partner_gid);
+    rbmd::Real distance_sq = rbmd::Real(-1);
+    rbmd::Id center_cell = -1;
+    rbmd::Id partner_cell = -1;
+    if (center_idx >= 0 && partner_idx >= 0) {
+      rbmd::Real dx =
+          device_data->_d_px[static_cast<std::size_t>(partner_idx)] -
+          device_data->_d_px[static_cast<std::size_t>(center_idx)];
+      rbmd::Real dy =
+          device_data->_d_py[static_cast<std::size_t>(partner_idx)] -
+          device_data->_d_py[static_cast<std::size_t>(center_idx)];
+      rbmd::Real dz =
+          device_data->_d_pz[static_cast<std::size_t>(partner_idx)] -
+          device_data->_d_pz[static_cast<std::size_t>(center_idx)];
+      MinImageDistance_while(force_box, dx, dy, dz);
+      distance_sq = dx * dx + dy * dy + dz * dz;
+      if (static_cast<std::size_t>(center_idx) <
+          linked_cell->_per_atom_cell_id.size()) {
+        center_cell = linked_cell->_per_atom_cell_id[
+            static_cast<std::size_t>(center_idx)];
+      }
+      if (static_cast<std::size_t>(partner_idx) <
+          linked_cell->_per_atom_cell_id.size()) {
+        partner_cell = linked_cell->_per_atom_cell_id[
+            static_cast<std::size_t>(partner_idx)];
+      }
+    }
+
+    NeighborRowAudit candidate_audit;
+    NeighborRowAudit core_audit;
+    if (center_idx >= 0 && center_idx < safe_nlocal) {
+      candidate_audit = InspectNeighborRow(
+          candidate_list, center_idx, partner_idx,
+          neighbor_list->_rbl_candidate_implicit_offsets);
+      core_audit = InspectNeighborRow(neighbor_list, center_idx, partner_idx,
+                                      false);
+    }
+
+    csv << test_current_step << "," << rank << "," << center_gid << ","
+        << partner_gid << "," << center_idx << "," << partner_idx << ","
+        << AtomRegionName(center_idx, safe_nlocal, safe_ntotal) << ","
+        << AtomRegionName(partner_idx, safe_nlocal, safe_ntotal) << ","
+        << distance_sq << "," << center_cell << "," << partner_cell << ","
+        << (candidate_audit.valid ? 1 : 0) << "," << candidate_audit.count
+        << "," << candidate_audit.written << ","
+        << (candidate_audit.contains ? 1 : 0) << ","
+        << (core_audit.valid ? 1 : 0) << "," << core_audit.count << ","
+        << core_audit.written << "," << (core_audit.contains ? 1 : 0)
+        << "\n";
+  }
+}
+
 }  // namespace
 
 LJCutCoulKspace::LJCutCoulKspace()
@@ -494,8 +698,10 @@ void LJCutCoulKspace::ComputeLJCutCoulForce()
 void LJCutCoulKspace::ComputeLJRBL()
 {
     // rbl_neighbor_list_build
+    LogLJHipMemory("before_neighbor_build");
     auto start = std::chrono::high_resolution_clock::now();
     _rbl_list = _rbl_neighbor_list_builder->Build();
+    LogLJHipMemory("after_neighbor_build");
 
     auto end = std::chrono::high_resolution_clock::now();
 
@@ -503,7 +709,9 @@ void LJCutCoulKspace::ComputeLJRBL()
     TimingStatistics::Instance().record("Neighbor-List",duration.count());
 	
     // compute force
-	auto start_rbl_force = std::chrono::high_resolution_clock::now();
+	rbmd::revision::WorkflowTimer revision_pair_wall("Pair-Workflow-Wall");
+  if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
+  auto start_rbl_force = std::chrono::high_resolution_clock::now();
 		
     const auto r_core =
       DataManager::getInstance().getConfigData()->Get<rbmd::Real>(
@@ -515,10 +723,30 @@ void LJCutCoulKspace::ComputeLJRBL()
 
     auto num_atoms = *(_structure_info_data->_num_atoms);
     const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
+    if (_d_rbl_force_sum.size() != 3) {
+      _d_rbl_force_sum.resize(3);
+    }
+    thrust::fill(_d_rbl_force_sum.begin(), _d_rbl_force_sum.end(),
+                 rbmd::Real(0));
+    const auto rbl_candidate = _rbl_list->_rbl_candidate_list;
+    const bool fused_candidate_sampling =
+        _rbl_list->_rbl_fused_sampling && static_cast<bool>(rbl_candidate);
+    const rbmd::Id* candidate_start = fused_candidate_sampling
+        ? thrust::raw_pointer_cast(rbl_candidate->_start_idx.data()) : nullptr;
+    const rbmd::Id* candidate_end = fused_candidate_sampling
+        ? thrust::raw_pointer_cast(rbl_candidate->_end_idx.data()) : nullptr;
+    const rbmd::Id* candidate_num = fused_candidate_sampling
+        ? thrust::raw_pointer_cast(rbl_candidate->_d_neighbor_num.data())
+        : nullptr;
+    const rbmd::Id* candidate_neighbors = fused_candidate_sampling
+        ? thrust::raw_pointer_cast(rbl_candidate->_d_neighbors.data())
+        : nullptr;
+    rbmd::revision::GpuTimer revision_pair("Pair-KernelGPU", nullptr);
     op::LJCutCoulRBLForceOp<device::DEVICE_GPU>()(
         force_box,r_core, _cut_off,num_atoms,neighbor_sample_num,
         _rbl_list->_selection_frequency,_alpha,_qqr2e,
         thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
+        thrust::raw_pointer_cast(_device_data->_d_atoms_id.data()),
         thrust::raw_pointer_cast(_device_data->_d_sigma.data()),
         thrust::raw_pointer_cast(_device_data->_d_eps.data()),
         thrust::raw_pointer_cast(_rbl_list->_start_idx.data()),
@@ -526,41 +754,54 @@ void LJCutCoulKspace::ComputeLJRBL()
         thrust::raw_pointer_cast(_rbl_list->_d_neighbors.data()),
         thrust::raw_pointer_cast(_rbl_list->_d_random_neighbor.data()),
         thrust::raw_pointer_cast(_rbl_list->_d_random_neighbor_num.data()),
+        thrust::raw_pointer_cast(
+            _rbl_list->_d_random_neighbor_weight.data()),
+        fused_candidate_sampling, candidate_start, candidate_end,
+        candidate_num, candidate_neighbors,
+        fused_candidate_sampling ? rbl_candidate->_max_neighbor_capacity : 0,
+        _rbl_list->_rbl_candidate_implicit_offsets,
+        _rbl_list->_rbl_sample_epoch,
         thrust::raw_pointer_cast(_device_data->_d_charge.data()),
         thrust::raw_pointer_cast(_device_data->_d_px.data()),
         thrust::raw_pointer_cast(_device_data->_d_py.data()),
         thrust::raw_pointer_cast(_device_data->_d_pz.data()),
         thrust::raw_pointer_cast(_device_data->_d_force_ljcoul_x.data()),
         thrust::raw_pointer_cast(_device_data->_d_force_ljcoul_y.data()),
-        thrust::raw_pointer_cast(_device_data->_d_force_ljcoul_z.data()));
+        thrust::raw_pointer_cast(_device_data->_d_force_ljcoul_z.data()),
+        thrust::raw_pointer_cast(_d_rbl_force_sum.data()));
+    revision_pair.Stop();
+    const auto linked_cell = LinkedCellLocator::GetInstance().GetLinkedCell();
+    EmitTrackedPairMembershipCsv(_device_data, _rbl_list, linked_cell,
+                                 force_box, num_atoms);
+    LogLJHipMemory("after_pair_kernel");
 
-    size_t reduce_span = static_cast<size_t>(num_atoms > 0 ? num_atoms : 0);
-    if (reduce_span > _device_data->_d_force_ljcoul_x.size()) {
-      reduce_span = _device_data->_d_force_ljcoul_x.size();
-    }
-    const rbmd::Real local_sum_x =
-        thrust::reduce(_device_data->_d_force_ljcoul_x.begin(),
-                       _device_data->_d_force_ljcoul_x.begin() + reduce_span,
-                       0.0f, thrust::plus<rbmd::Real>());
-    const rbmd::Real local_sum_y =
-        thrust::reduce(_device_data->_d_force_ljcoul_y.begin(),
-                       _device_data->_d_force_ljcoul_y.begin() + reduce_span,
-                       0.0f, thrust::plus<rbmd::Real>());
-    const rbmd::Real local_sum_z =
-        thrust::reduce(_device_data->_d_force_ljcoul_z.begin(),
-                       _device_data->_d_force_ljcoul_z.begin() + reduce_span,
-                       0.0f, thrust::plus<rbmd::Real>());
+    LogLJHipMemory("before_local_reduce");
+    CHECK_RUNTIME(MEMCPY(
+        _h_rbl_force_sum.data(),
+        thrust::raw_pointer_cast(_d_rbl_force_sum.data()),
+        3 * sizeof(rbmd::Real), D2H));
+    LogLJHipMemory("after_local_reduce");
+
+    std::array<rbmd::Real, 3> global_force_sum{
+        _h_rbl_force_sum[0], _h_rbl_force_sum[1], _h_rbl_force_sum[2]};
+    AllReduceRealBufferInPlace(global_force_sum.data(),
+                               global_force_sum.size());
+    LogLJHipMemory("after_mpi_reduce");
     const rbmd::Id global_num_atoms = GetGlobalIdSum(num_atoms);
-    _corr_value_x = GetGlobalRealSum(local_sum_x) / global_num_atoms;
-    _corr_value_y = GetGlobalRealSum(local_sum_y) / global_num_atoms;
-    _corr_value_z = GetGlobalRealSum(local_sum_z) / global_num_atoms;
+    _corr_value_x = global_force_sum[0] / global_num_atoms;
+    _corr_value_y = global_force_sum[1] / global_num_atoms;
+    _corr_value_z = global_force_sum[2] / global_num_atoms;
 
     // fix RBL:   rbl_force = force - corr_value
+    rbmd::revision::GpuTimer revision_correction("RBL-CorrectionGPU", nullptr);
     op::FixRBLForceOp<device::DEVICE_GPU>()(
                          num_atoms, _corr_value_x, _corr_value_y, _corr_value_z,
                         thrust::raw_pointer_cast(_device_data->_d_force_ljcoul_x.data()),
                         thrust::raw_pointer_cast(_device_data->_d_force_ljcoul_y.data()),
                         thrust::raw_pointer_cast(_device_data->_d_force_ljcoul_z.data()));
+    revision_correction.Stop();
+
+	if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
 
 	auto end_rbl_force = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<rbmd::Real> duration_rbl_force = end_rbl_force - start_rbl_force;
@@ -583,6 +824,8 @@ void LJCutCoulKspace::ComputeLJVerlet()
   TimingStatistics::Instance().record("Neighbor-List",duration.count());
   
   //
+  rbmd::revision::WorkflowTimer revision_pair_wall("Pair-Workflow-Wall");
+  if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
   auto start_verlet_force = std::chrono::high_resolution_clock::now();
   
   thrust::device_vector<rbmd::Real> d_total_evdwl(1, 0.0);
@@ -590,6 +833,7 @@ void LJCutCoulKspace::ComputeLJVerlet()
   //
   auto num_atoms = *(_structure_info_data->_num_atoms);
   const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
+  rbmd::revision::GpuTimer revision_pair("Pair-KernelGPU", nullptr);
   op::LJCutCoulForceOp<device::DEVICE_GPU>()(
                     force_box,_cut_off, num_atoms,_alpha,_qqr2e,
                     thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
@@ -608,10 +852,13 @@ void LJCutCoulKspace::ComputeLJVerlet()
                     thrust::raw_pointer_cast(_device_data->_d_flat_virial_lj.data()),
                     thrust::raw_pointer_cast(d_total_evdwl.data()),
                       thrust::raw_pointer_cast(d_total_ecoul.data()));
+  revision_pair.Stop();
   const auto linked_cell = LinkedCellLocator::GetInstance().GetLinkedCell();
   EmitPairSpikeDebugCsv(_device_data, _list, linked_cell, force_box,
                         "after_short_range", _cut_off, _alpha, _qqr2e,
                         num_atoms);
+
+  if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
 
   auto end_verlet_force = std::chrono::high_resolution_clock::now();
   std::chrono::duration<rbmd::Real> duration_verlet_force = end_verlet_force - start_verlet_force;
@@ -722,6 +969,7 @@ void LJCutCoulKspace::ComputeLJSOG() {
   TimingStatistics::Instance().record("Neighbor-List",duration.count());
 
   //
+  if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
   auto start_verlet_force = std::chrono::high_resolution_clock::now();
   //
   thrust::device_vector<rbmd::Real> _d_total_evdwl(1, 0.0);
@@ -751,6 +999,8 @@ void LJCutCoulKspace::ComputeLJSOG() {
                   thrust::raw_pointer_cast(_device_data->_d_flat_virial_lj.data()),
                   thrust::raw_pointer_cast(_d_total_evdwl.data()),
                   thrust::raw_pointer_cast(_d_total_ecoul.data()));
+
+  if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
 
   auto end_verlet_force = std::chrono::high_resolution_clock::now();
   std::chrono::duration<rbmd::Real> duration_verlet_force = end_verlet_force - start_verlet_force;

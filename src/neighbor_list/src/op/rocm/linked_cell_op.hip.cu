@@ -1,8 +1,14 @@
 #include "common/device_types.h"
+#include "common/atomic_count.h"
 #include "common/rbmd_define.h"
 #include "common/types.h"
 #include "linked_cell/linked_cell.h"
 #include "linked_cell_op.h"
+
+#include <thrust/copy.h>
+#include <thrust/device_ptr.h>
+#include <thrust/fill.h>
+#include <thrust/scan.h>
 
 namespace op {
 __global__ void InitializeCell(LinkedCellDeviceDataPtr* linked_cell, Box* box,
@@ -58,6 +64,7 @@ __global__ void AssignAtomsToCell(rbmd::Real* px, rbmd::Real* py,
                                   rbmd::Real* pz, Box* d_box,
                                   LinkedCellDeviceDataPtr* linked_cell,
                                   Cell* cells, rbmd::Id* per_atom_cell_id,
+                                  rbmd::Id native_atoms_num,
                                   rbmd::Id total_atoms_num) {
   unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= total_atoms_num) {
@@ -88,7 +95,27 @@ __global__ void AssignAtomsToCell(rbmd::Real* px, rbmd::Real* py,
       (cell_idx.z * linked_cell->_d_per_dimension_cells[1] + cell_idx.y) *
           linked_cell->_d_per_dimension_cells[0] +
       cell_idx.x;
-  per_atom_cell_id[idx] = cell_idx_1d;
+  Int3 assigned_cell_idx = cell_idx;
+  if (idx < native_atoms_num) {
+    assigned_cell_idx.x = MIN(MAX(assigned_cell_idx.x,
+                                  linked_cell->_d_nativate_cells_start[0]),
+                              linked_cell->_d_nativate_cells_start[0] +
+                                  linked_cell->_d_nativate_cells_dims[0] - 1);
+    assigned_cell_idx.y = MIN(MAX(assigned_cell_idx.y,
+                                  linked_cell->_d_nativate_cells_start[1]),
+                              linked_cell->_d_nativate_cells_start[1] +
+                                  linked_cell->_d_nativate_cells_dims[1] - 1);
+    assigned_cell_idx.z = MIN(MAX(assigned_cell_idx.z,
+                                  linked_cell->_d_nativate_cells_start[2]),
+                              linked_cell->_d_nativate_cells_start[2] +
+                                  linked_cell->_d_nativate_cells_dims[2] - 1);
+  }
+  rbmd::Id assigned_cell_idx_1d =
+      (assigned_cell_idx.z * linked_cell->_d_per_dimension_cells[1] +
+       assigned_cell_idx.y) *
+          linked_cell->_d_per_dimension_cells[0] +
+      assigned_cell_idx.x;
+  per_atom_cell_id[idx] = assigned_cell_idx_1d;
   if (cells[cell_idx_1d].cell_coord_min[0] <= local_point.x &&
       cells[cell_idx_1d].cell_coord_min[1] <= local_point.y &&
       cells[cell_idx_1d].cell_coord_min[2] <= local_point.z &&
@@ -133,7 +160,31 @@ __global__ void AssignAtomsToCell(rbmd::Real* px, rbmd::Real* py,
       local_point.x < cells[corrected_cell_idx_1d].cell_coord_max[0] &&
       local_point.y < cells[corrected_cell_idx_1d].cell_coord_max[1] &&
       local_point.z < cells[corrected_cell_idx_1d].cell_coord_max[2]) {
-    per_atom_cell_id[idx] = corrected_cell_idx_1d;
+    Int3 assigned_corrected_cell_idx = corrected_cell_idx;
+    if (idx < native_atoms_num) {
+      assigned_corrected_cell_idx.x = MIN(
+          MAX(assigned_corrected_cell_idx.x,
+              linked_cell->_d_nativate_cells_start[0]),
+          linked_cell->_d_nativate_cells_start[0] +
+              linked_cell->_d_nativate_cells_dims[0] - 1);
+      assigned_corrected_cell_idx.y = MIN(
+          MAX(assigned_corrected_cell_idx.y,
+              linked_cell->_d_nativate_cells_start[1]),
+          linked_cell->_d_nativate_cells_start[1] +
+              linked_cell->_d_nativate_cells_dims[1] - 1);
+      assigned_corrected_cell_idx.z = MIN(
+          MAX(assigned_corrected_cell_idx.z,
+              linked_cell->_d_nativate_cells_start[2]),
+          linked_cell->_d_nativate_cells_start[2] +
+              linked_cell->_d_nativate_cells_dims[2] - 1);
+    }
+    const rbmd::Id assigned_corrected_cell_idx_1d =
+        (assigned_corrected_cell_idx.z *
+             linked_cell->_d_per_dimension_cells[1] +
+         assigned_corrected_cell_idx.y) *
+            linked_cell->_d_per_dimension_cells[0] +
+        assigned_corrected_cell_idx.x;
+    per_atom_cell_id[idx] = assigned_corrected_cell_idx_1d;
   }
 }
 
@@ -150,17 +201,58 @@ __global__ void ComputeCellRangesIndices(rbmd::Id* sorted_cell_index,
 
     if (idx == 0 || cell != sorted_cell_index[idx - 1]) {
       //_d_in_atom_list_start_index[Cell] = idx;
-      atomicExch(
-          &d_in_atom_list_start_index[cell],
-          idx);  // 一般来说不会同时设置，这个是后续性能优化的点，可以考虑不使用原子操作
+      d_in_atom_list_start_index[cell] = idx;  // 一般来说不会同时设置，这个是后续性能优化的点，可以考虑不使用原子操作
     }
 
     if (idx == num_atoms - 1 || cell != sorted_cell_index[idx + 1]) {
       //_d_in_atom_list_end_index[Cell] = idx;
-      atomicExch(&d_in_atom_list_end_index[cell],
-                 idx + 1);  //  小于 不是小于等于
+      d_in_atom_list_end_index[cell] = idx + 1;  //  小于 不是小于等于
     }
   }
+}
+
+__global__ void CountAtomsPerCell(const rbmd::Id* per_atom_cell_id,
+                                  rbmd::Id total_atoms,
+                                  rbmd::Id total_cells,
+                                  rbmd::Id* cell_count) {
+  const rbmd::Id atom_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (atom_idx >= total_atoms) {
+    return;
+  }
+  const rbmd::Id cell = __ldg(&per_atom_cell_id[atom_idx]);
+  if (static_cast<unsigned long long>(cell) <
+      static_cast<unsigned long long>(total_cells)) {
+    rbmd::AtomicAddCount(&cell_count[cell], rbmd::Id(1));
+  }
+}
+
+__global__ void ScatterAtomsByCell(const rbmd::Id* per_atom_cell_id,
+                                   rbmd::Id total_atoms,
+                                   rbmd::Id total_cells,
+                                   rbmd::Id* cell_cursor,
+                                   rbmd::Id* sorted_cell_id,
+                                   rbmd::Id* sorted_atom_indices,
+                                   const rbmd::Real* px,
+                                   const rbmd::Real* py,
+                                   const rbmd::Real* pz,
+                                   rbmd::Real* sorted_px,
+                                   rbmd::Real* sorted_py,
+                                   rbmd::Real* sorted_pz) {
+  const rbmd::Id atom_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (atom_idx >= total_atoms) {
+    return;
+  }
+  const rbmd::Id cell = __ldg(&per_atom_cell_id[atom_idx]);
+  if (static_cast<unsigned long long>(cell) >=
+      static_cast<unsigned long long>(total_cells)) {
+    return;
+  }
+  const rbmd::Id output = rbmd::AtomicAddCount(&cell_cursor[cell], rbmd::Id(1));
+  sorted_cell_id[output] = cell;
+  sorted_atom_indices[output] = atom_idx;
+  sorted_px[output] = __ldg(&px[atom_idx]);
+  sorted_py[output] = __ldg(&py[atom_idx]);
+  sorted_pz[output] = __ldg(&pz[atom_idx]);
 }
 
 __global__ void MapAtomidToIdx(rbmd::Id* d_atomid2idx,
@@ -186,12 +278,13 @@ void InitializeCellOp<device::DEVICE_GPU>::operator()(
 void AssignAtomsToCellOp<device::DEVICE_GPU>::operator()(
     rbmd::Real* px, rbmd::Real* py, rbmd::Real* pz, Box* box,
     LinkedCellDeviceDataPtr* linked_cell, Cell* cells,
-    rbmd::Id* per_atom_cell_id, rbmd::Id total_atoms_num) {
+    rbmd::Id* per_atom_cell_id, rbmd::Id native_atoms_num,
+    rbmd::Id total_atoms_num) {
   unsigned int blocks_per_grid =
       (total_atoms_num + BLOCK_SIZE - 1) / BLOCK_SIZE;
   CHECK_KERNEL(AssignAtomsToCell<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
       px, py, pz, box, linked_cell, cells, per_atom_cell_id,
-      total_atoms_num));
+      native_atoms_num, total_atoms_num));
 }
 
 void ComputeCellRangesIndicesOp<device::DEVICE_GPU>::operator()(
@@ -201,6 +294,28 @@ void ComputeCellRangesIndicesOp<device::DEVICE_GPU>::operator()(
   CHECK_KERNEL(ComputeCellRangesIndices<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
       sorted_cell_index, d_in_atom_list_start_index, d_in_atom_list_end_index,
       num_atoms));
+}
+
+void BuildAtomicCellListOp<device::DEVICE_GPU>::operator()(
+    const rbmd::Id* per_atom_cell_id, rbmd::Id total_atoms,
+    rbmd::Id total_cells, rbmd::Id* cell_start, rbmd::Id* cell_end,
+    rbmd::Id* sorted_cell_id, rbmd::Id* sorted_atom_indices,
+    const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
+    rbmd::Real* sorted_px, rbmd::Real* sorted_py, rbmd::Real* sorted_pz) {
+  auto start = thrust::device_pointer_cast(cell_start);
+  auto end = thrust::device_pointer_cast(cell_end);
+  thrust::fill(start, start + total_cells, rbmd::Id(0));
+
+  const unsigned int blocks =
+      (total_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
+  CHECK_KERNEL(CountAtomsPerCell<<<blocks, BLOCK_SIZE, 0, 0>>>(
+      per_atom_cell_id, total_atoms, total_cells, cell_start));
+
+  thrust::exclusive_scan(start, start + total_cells, end);
+  thrust::copy(end, end + total_cells, start);
+  CHECK_KERNEL(ScatterAtomsByCell<<<blocks, BLOCK_SIZE, 0, 0>>>(
+      per_atom_cell_id, total_atoms, total_cells, cell_end, sorted_cell_id,
+      sorted_atom_indices, px, py, pz, sorted_px, sorted_py, sorted_pz));
 }
 void MapAtomidToIdxOp<device::DEVICE_GPU>::operator()(
     rbmd::Id* d_atomid2idx, rbmd::Id* d_sorted_atom_idx, rbmd::Id num_atoms) {

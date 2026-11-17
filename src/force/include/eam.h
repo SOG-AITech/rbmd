@@ -38,6 +38,7 @@ public:
   void ComputEAMEnergy(const thrust::device_vector<rbmd::Real>& eam_fp);
 
 private:
+  void ApplyRblForceCorrection(rbmd::Id num_atoms);
   std::shared_ptr<RblFullNeighborListBuilder> _rbl_neighbor_list_builder;
   std::shared_ptr<BaseNeighborListBuilder> _neighbor_list_builder;
   std::shared_ptr<NeighborList> _rbl_list;
@@ -45,9 +46,9 @@ private:
 
   //energy
 
-  rbmd::Real _e_embedding = 0;
-  rbmd::Real _e_pair = 0;
-  rbmd::Real _e_pe = 0;
+  rbmd::Energy _e_embedding = 0;
+  rbmd::Energy _e_pair = 0;
+  rbmd::Energy _e_pe = 0;
 
   //RBL
   std::string  _energy_rbl_flag = "yes";

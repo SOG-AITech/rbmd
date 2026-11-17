@@ -27,7 +27,7 @@ protected:
 
   struct Header {
     int count{0};
-    int nbytes{0};
+    std::uint64_t nbytes{0};
     uint32_t epoch{0};
   };
 
@@ -38,15 +38,19 @@ protected:
     int header_channel{0};
     int payload_channel{1};
 
-    int HeaderTag(unsigned short d, Phase phase, uint32_t epoch) const {
+    int HeaderTag(unsigned short d, Phase phase, uint32_t epoch,
+                  int receive_side) const {
       return base + static_cast<int>(d) * stride_dim +
-             static_cast<int>(phase) * stride_phase + header_channel +
+             static_cast<int>(phase) * stride_phase + 2 * header_channel +
+             receive_side +
              static_cast<int>(epoch % 2) * stride_dim * stride_phase;
     }
 
-    int PayloadTag(unsigned short d, Phase phase, uint32_t epoch) const {
+    int PayloadTag(unsigned short d, Phase phase, uint32_t epoch,
+                   int receive_side) const {
       return base + static_cast<int>(d) * stride_dim +
-             static_cast<int>(phase) * stride_phase + payload_channel +
+             static_cast<int>(phase) * stride_phase + 2 * payload_channel +
+             receive_side +
              static_cast<int>(epoch % 2) * stride_dim * stride_phase;
     }
   };
@@ -54,8 +58,8 @@ protected:
   struct PhaseExchangeResult {
     std::vector<int> send_counts;
     std::vector<int> recv_counts;
-    std::vector<int> send_bytes;
-    std::vector<int> recv_bytes;
+    std::vector<std::size_t> send_bytes;
+    std::vector<std::size_t> recv_bytes;
   };
 
   void convert1StageTo3StageNeighbours(
@@ -83,16 +87,17 @@ protected:
                         LinkedCell *moleculeContainer,
                         DomainDecomposition *domainDecomp,
                         std::vector<int> &sendCounts,
-                        std::vector<int> &sendBytes);
+                        std::vector<std::size_t> &sendBytes);
 
   void allocateRecvBuffers(unsigned short d, Phase phase,
-                           const std::vector<int> &recvBytes);
+                           const std::vector<std::size_t> &recvBytes);
 
   MsgTags _tags{};
   uint32_t _epoch{0};
 
   struct PendingForwardPeer {
     int rank{-1};
+    int receive_side{-1};
     std::vector<rbmd::Id> send_ids{};
     std::vector<rbmd::Id> recv_ids{};
     std::vector<rbmd::Real> shift_x{};
@@ -109,6 +114,7 @@ protected:
 
   struct ForwardPeer {
     int rank{-1};
+    int receive_side{-1};
     thrust::device_vector<rbmd::Id> send_indices{};
     thrust::device_vector<rbmd::Id> recv_indices{};
     thrust::device_vector<rbmd::Real> shift_x{};
@@ -152,6 +158,10 @@ public:
   void ForwardGhostCoordinates(LinkedCell* moleculeContainer,
                                DomainDecomposition* domainDecomp);
   void ForwardGhostFields(ForwardGhostState state,
+                          LinkedCell* moleculeContainer,
+                          DomainDecomposition* domainDecomp,
+                          thrust::device_vector<rbmd::Real>* scalar = nullptr);
+  void ForwardGhostScalar(thrust::device_vector<rbmd::Real>& values,
                           LinkedCell* moleculeContainer,
                           DomainDecomposition* domainDecomp);
   void InvalidateGhostCoordinateExchange();

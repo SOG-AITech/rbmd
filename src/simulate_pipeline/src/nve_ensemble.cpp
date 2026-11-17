@@ -1,3 +1,4 @@
+#include "common/revision_options.h"
 #include "nve_ensemble.h"
 #include <chrono>
 
@@ -47,7 +48,7 @@ void NVEensemble::Init() {
   _energy_stable_scheme_controller->Init();
 
   _force_controller->Init();
-  _force_controller->Execute();
+  EvaluateForces();
 
   _neighbor_type =
   DataManager::getInstance().getConfigData()->Get<std::string>(
@@ -69,7 +70,7 @@ void NVEensemble::Solve() {
     _shake_controller->ShakeA();
   }
 
-  _force_controller->Execute();
+  EvaluateForces();
 
   _velocity_controller->Update();
 
@@ -78,7 +79,7 @@ void NVEensemble::Solve() {
     _shake_controller->ShakeB();
   }
 
-  if (_neighbor_type == "RBL")
+  if (_neighbor_type == "RBL" && !rbmd::revision::GetOptions().unmodified_nve)
   {
     _energy_stable_scheme_controller->Update();
   }

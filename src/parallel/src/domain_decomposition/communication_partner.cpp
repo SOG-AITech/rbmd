@@ -3,8 +3,8 @@
 #include <thrust/copy.h>
 #include <thrust/host_vector.h>
 #include <thrust/remove.h>
-#include <thrust/gather.h>
 #include <thrust/scatter.h>
+#include <thrust/iterator/constant_iterator.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/transform.h>
 #include <thrust/iterator/reverse_iterator.h>
@@ -25,7 +25,6 @@
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 #include <cstdlib>
@@ -33,7 +32,7 @@
 
 #include "common/rbmd_define.h"
 #include "data_manager.h"
-#include "domain_decomposition_op.h"
+#include "gpu_comm_plan_op.h"
 #include "domain_decomposition/topology_pack_op.h"
 #include "mpi_data_type_utils.h"
 
@@ -62,39 +61,6 @@ bool EnvFlagEnabled(const char* name) {
   std::transform(value.begin(), value.end(), value.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return value == "1" || value == "true" || value == "yes" || value == "on";
-}
-
-bool DedupGhostAtomsEnabled() {
-  const char* raw = std::getenv("RBMD_DEDUP_GHOST_ATOMS");
-  if (raw == nullptr) {
-    return true;
-  }
-  return EnvFlagEnabled("RBMD_DEDUP_GHOST_ATOMS");
-}
-
-template <typename T>
-thrust::host_vector<T> CopyGhostColumnToHost(char* recv_buffer,
-                                             size_t offset,
-                                             unsigned int count) {
-  thrust::host_vector<T> values(count);
-  if (count == 0) {
-    return values;
-  }
-  auto source_raw_ptr = reinterpret_cast<T*>(recv_buffer + offset);
-  thrust::device_ptr<T> source_begin_iter(source_raw_ptr);
-  thrust::copy(source_begin_iter, source_begin_iter + count, values.begin());
-  return values;
-}
-
-template <typename T>
-thrust::host_vector<T> GatherHostByIndex(
-    const thrust::host_vector<T>& source,
-    const std::vector<unsigned int>& indices) {
-  thrust::host_vector<T> values(indices.size());
-  for (size_t i = 0; i < indices.size(); ++i) {
-    values[i] = source[indices[i]];
-  }
-  return values;
 }
 
 std::vector<rbmd::Id> ParseTrackedGidsFromEnv() {
@@ -537,7 +503,16 @@ CommunicationPartner::CommunicationPartner(const CommunicationPartner& o)
       _isLeavingRecvFinalized(o._isLeavingRecvFinalized),
       _isHaloRecvPosted(o._isHaloRecvPosted),
       _isHaloRecvFinalized(o._isHaloRecvFinalized),
-      _recv_buf(o._recv_buf)
+      _recv_buf(o._recv_buf),
+      _leaving_send_indices(o._leaving_send_indices),
+      _leaving_owner(o._leaving_owner),
+      _leaving_shift_x(o._leaving_shift_x),
+      _leaving_shift_y(o._leaving_shift_y),
+      _leaving_shift_z(o._leaving_shift_z),
+      _halo_send_indices(o._halo_send_indices),
+      _halo_shift_x(o._halo_shift_x),
+      _halo_shift_y(o._halo_shift_y),
+      _halo_shift_z(o._halo_shift_z)
 {
   // 构造函数体为空，所有工作都在初始化列表中完成。
 }
@@ -567,6 +542,15 @@ CommunicationPartner& CommunicationPartner::operator=(
     _isHaloRecvPosted = o._isHaloRecvPosted;
     _isHaloRecvFinalized = o._isHaloRecvFinalized;
     _recv_buf = o._recv_buf;
+    _leaving_send_indices = o._leaving_send_indices;
+    _leaving_owner = o._leaving_owner;
+    _leaving_shift_x = o._leaving_shift_x;
+    _leaving_shift_y = o._leaving_shift_y;
+    _leaving_shift_z = o._leaving_shift_z;
+    _halo_send_indices = o._halo_send_indices;
+    _halo_shift_x = o._halo_shift_x;
+    _halo_shift_y = o._halo_shift_y;
+    _halo_shift_z = o._halo_shift_z;
   }
   return *this;
 }
@@ -673,6 +657,21 @@ size_t CommunicationPartner::GetSendBytes(MessageType msgType) const {
       return _send_buf._ghost_atoms.size();
     case FORCES:
       return 0;
+    default:
+      return 0;
+  }
+}
+
+size_t CommunicationPartner::GetAtomByteSize(MessageType msgType) const {
+  switch (msgType) {
+    case LEAVING_ONLY:
+    case LEAVING_AND_HALO_COPIES:
+      if (_send_buf._size_exchange > 0) {
+        return static_cast<size_t>(_send_buf._size_exchange) * sizeof(double);
+      }
+      return _send_buf._leaving_size;
+    case HALO_COPIES:
+      return _send_buf._ghost_size;
     default:
       return 0;
   }
@@ -1041,6 +1040,30 @@ void CommunicationPartner::ProcessLeavingData(LinkedCell* linked_cell) {
       current_offset += recv_leaving_atoms_num * id_size;
     }
     {
+      auto* source = reinterpret_cast<rbmd::Id*>(p_recv_buffer + current_offset);
+      thrust::copy(thrust::device_pointer_cast(source),
+                   thrust::device_pointer_cast(source) + recv_count,
+                   device_data->_d_flagX.begin() + shared_insert);
+      current_offset += recv_count * id_size;
+    }
+    {
+      auto* source = reinterpret_cast<rbmd::Id*>(p_recv_buffer + current_offset);
+      thrust::copy(thrust::device_pointer_cast(source),
+                   thrust::device_pointer_cast(source) + recv_count,
+                   device_data->_d_flagY.begin() + shared_insert);
+      current_offset += recv_count * id_size;
+    }
+    {
+      auto* source = reinterpret_cast<rbmd::Id*>(p_recv_buffer + current_offset);
+      thrust::copy(thrust::device_pointer_cast(source),
+                   thrust::device_pointer_cast(source) + recv_count,
+                   device_data->_d_flagZ.begin() + shared_insert);
+      current_offset += recv_count * id_size;
+    }
+    if (!has_molecule && sizeof(rbmd::Real) > sizeof(rbmd::Id)) {
+      current_offset += recv_count * id_size;
+    }
+    {
       auto source_raw_ptr =
           reinterpret_cast<rbmd::Real*>(p_recv_buffer + current_offset);
       thrust::device_ptr<rbmd::Real> source_begin_iter(source_raw_ptr);
@@ -1108,6 +1131,29 @@ void CommunicationPartner::ProcessLeavingData(LinkedCell* linked_cell) {
           source_begin_iter + recv_leaving_atoms_num;
       auto dest_begin_iter = device_data->_d_charge.begin() + shared_insert;
       thrust::copy(source_begin_iter, source_end_iter, dest_begin_iter);
+    }
+
+    if (has_charge) current_offset += recv_count * real_size;
+    {
+      auto* source = reinterpret_cast<rbmd::Real*>(p_recv_buffer + current_offset);
+      thrust::copy(thrust::device_pointer_cast(source),
+                   thrust::device_pointer_cast(source) + recv_count,
+                   device_data->_d_unwarp_px.begin() + shared_insert);
+      current_offset += recv_count * real_size;
+    }
+    {
+      auto* source = reinterpret_cast<rbmd::Real*>(p_recv_buffer + current_offset);
+      thrust::copy(thrust::device_pointer_cast(source),
+                   thrust::device_pointer_cast(source) + recv_count,
+                   device_data->_d_unwarp_py.begin() + shared_insert);
+      current_offset += recv_count * real_size;
+    }
+    {
+      auto* source = reinterpret_cast<rbmd::Real*>(p_recv_buffer + current_offset);
+      thrust::copy(thrust::device_pointer_cast(source),
+                   thrust::device_pointer_cast(source) + recv_count,
+                   device_data->_d_unwarp_pz.begin() + shared_insert);
+      current_offset += recv_count * real_size;
     }
 
     thrust::fill(linked_cell->_per_atom_cell_id.begin() + shared_insert,
@@ -1196,6 +1242,12 @@ void CommunicationPartner::ProcessLeavingData(LinkedCell* linked_cell) {
       thrust::raw_pointer_cast(device_data->_d_molecular_id.data());
   unpack_params.d_charge =
       thrust::raw_pointer_cast(device_data->_d_charge.data());
+  unpack_params.d_image_x = thrust::raw_pointer_cast(device_data->_d_flagX.data());
+  unpack_params.d_image_y = thrust::raw_pointer_cast(device_data->_d_flagY.data());
+  unpack_params.d_image_z = thrust::raw_pointer_cast(device_data->_d_flagZ.data());
+  unpack_params.d_ux = thrust::raw_pointer_cast(device_data->_d_unwarp_px.data());
+  unpack_params.d_uy = thrust::raw_pointer_cast(device_data->_d_unwarp_py.data());
+  unpack_params.d_uz = thrust::raw_pointer_cast(device_data->_d_unwarp_pz.data());
 
   // Bond 数据
   unpack_params.d_num_bond =
@@ -1287,10 +1339,8 @@ void CommunicationPartner::ProcessGhostData(LinkedCell* linked_cell) {
   if (recv_ghost_atoms_num == 0) {
     return;
   }
-  char* p_recv_buffer = thrust::raw_pointer_cast(
+  const char* p_recv_buffer = thrust::raw_pointer_cast(
       _recv_buf._ghost_atoms.data());
-  const size_t id_size = sizeof(rbmd::Id);
-  const size_t real_size = sizeof(rbmd::Real);
   auto device_data = DataManager::getInstance().getDeviceData();
   const auto atom_style =
       DataManager::getInstance().getConfigData()->Get<std::string>(
@@ -1298,179 +1348,28 @@ void CommunicationPartner::ProcessGhostData(LinkedCell* linked_cell) {
   const bool has_charge =
       atom_style == "charge" || atom_style == "full";
 
-  rbmd::Id recv_count = static_cast<rbmd::Id>(recv_ghost_atoms_num);
+  const rbmd::Id recv_count = static_cast<rbmd::Id>(recv_ghost_atoms_num);
   const rbmd::Id old_total = linked_cell->_total_atoms_num;
   const rbmd::Id old_native = linked_cell->_native_atoms_num;
-
-  if (DedupGhostAtomsEnabled()) {
-    size_t dedup_offset = 0;
-    auto recv_ids = CopyGhostColumnToHost<rbmd::Id>(
-        p_recv_buffer, dedup_offset, recv_ghost_atoms_num);
-
-    std::unordered_set<rbmd::Id> seen_ids;
-    seen_ids.reserve(static_cast<size_t>(old_total) +
-                     static_cast<size_t>(recv_ghost_atoms_num));
-    if (old_total > 0) {
-      thrust::host_vector<rbmd::Id> existing_ids(
-          static_cast<size_t>(old_total));
-      thrust::copy(device_data->_d_atoms_id.begin(),
-                   device_data->_d_atoms_id.begin() + old_total,
-                   existing_ids.begin());
-      for (const auto id : existing_ids) {
-        seen_ids.insert(id);
-      }
-    }
-
-    std::vector<unsigned int> keep_indices;
-    keep_indices.reserve(recv_ghost_atoms_num);
-    for (unsigned int i = 0; i < recv_ghost_atoms_num; ++i) {
-      if (seen_ids.insert(recv_ids[i]).second) {
-        keep_indices.push_back(i);
-      }
-    }
-
-    if (keep_indices.size() != recv_ghost_atoms_num) {
-      if (keep_indices.empty()) {
-        return;
-      }
-
-      dedup_offset += recv_ghost_atoms_num * id_size;
-      auto recv_types = CopyGhostColumnToHost<rbmd::Id>(
-          p_recv_buffer, dedup_offset, recv_ghost_atoms_num);
-      dedup_offset += recv_ghost_atoms_num * id_size;
-      auto recv_px = CopyGhostColumnToHost<rbmd::Real>(
-          p_recv_buffer, dedup_offset, recv_ghost_atoms_num);
-      dedup_offset += recv_ghost_atoms_num * real_size;
-      auto recv_py = CopyGhostColumnToHost<rbmd::Real>(
-          p_recv_buffer, dedup_offset, recv_ghost_atoms_num);
-      dedup_offset += recv_ghost_atoms_num * real_size;
-      auto recv_pz = CopyGhostColumnToHost<rbmd::Real>(
-          p_recv_buffer, dedup_offset, recv_ghost_atoms_num);
-      dedup_offset += recv_ghost_atoms_num * real_size;
-      thrust::host_vector<rbmd::Real> recv_charge;
-      if (has_charge) {
-        recv_charge = CopyGhostColumnToHost<rbmd::Real>(
-            p_recv_buffer, dedup_offset, recv_ghost_atoms_num);
-      }
-
-      auto kept_ids = GatherHostByIndex(recv_ids, keep_indices);
-      auto kept_types = GatherHostByIndex(recv_types, keep_indices);
-      auto kept_px = GatherHostByIndex(recv_px, keep_indices);
-      auto kept_py = GatherHostByIndex(recv_py, keep_indices);
-      auto kept_pz = GatherHostByIndex(recv_pz, keep_indices);
-      thrust::host_vector<rbmd::Real> kept_charge;
-      if (has_charge) {
-        kept_charge = GatherHostByIndex(recv_charge, keep_indices);
-      }
-
-      recv_count = static_cast<rbmd::Id>(keep_indices.size());
-      const rbmd::Id new_ghost = linked_cell->_ghost_atoms_num + recv_count;
-      const rbmd::Id target_total = old_native + new_ghost;
-      const rbmd::Id insertion_offset = old_total;
-
-      linked_cell->EnsureCapacity(target_total);
-      linked_cell->ResizeNativeDependentVectors(old_native, target_total);
-
-      thrust::copy(kept_ids.begin(), kept_ids.end(),
-                   device_data->_d_atoms_id.begin() + insertion_offset);
-      thrust::copy(kept_types.begin(), kept_types.end(),
-                   device_data->_d_atoms_type.begin() + insertion_offset);
-      thrust::copy(kept_px.begin(), kept_px.end(),
-                   device_data->_d_px.begin() + insertion_offset);
-      thrust::copy(kept_py.begin(), kept_py.end(),
-                   device_data->_d_py.begin() + insertion_offset);
-      thrust::copy(kept_pz.begin(), kept_pz.end(),
-                   device_data->_d_pz.begin() + insertion_offset);
-      if (has_charge) {
-        thrust::copy(kept_charge.begin(), kept_charge.end(),
-                     device_data->_d_charge.begin() + insertion_offset);
-      }
-
-      thrust::fill(linked_cell->_per_atom_cell_id.begin() + insertion_offset,
-                   linked_cell->_per_atom_cell_id.begin() + insertion_offset +
-                       recv_count,
-                   0);
-      return;
-    }
-  }
-
   const rbmd::Id new_ghost = linked_cell->_ghost_atoms_num + recv_count;
   const rbmd::Id target_total = old_native + new_ghost;
-
-  // 使用简化的容量管理：直接确保总容量足够
   linked_cell->EnsureCapacity(target_total);
   linked_cell->ResizeNativeDependentVectors(old_native, target_total);
-  // rbsog 的 ResizeNativeDependentVectors() 已经同步更新
-  // _native/_ghost/_total 计数；此处不能再做一次 ghost 计数累加，
-  // 否则会重复累加。
 
-  size_t current_offset = 0;
-  const rbmd::Id insertion_offset = old_total;
-  {
-    auto source_raw_ptr = reinterpret_cast<rbmd::Id*>(
-        p_recv_buffer + current_offset);
-    thrust::device_ptr<rbmd::Id> source_begin_iter(source_raw_ptr);
-    thrust::device_ptr<rbmd::Id> source_end_iter =
-        source_begin_iter + recv_ghost_atoms_num;
-    auto dest_begin_iter =
-        device_data->_d_atoms_id.begin() + insertion_offset;
-    thrust::copy(source_begin_iter, source_end_iter, dest_begin_iter);
-  }
-  current_offset += recv_ghost_atoms_num * id_size;
-  {
-    auto source_raw_ptr = reinterpret_cast<rbmd::Id*>(
-        p_recv_buffer + current_offset);
-    thrust::device_ptr<rbmd::Id> source_begin_iter(source_raw_ptr);
-    thrust::device_ptr<rbmd::Id> source_end_iter =
-        source_begin_iter + recv_ghost_atoms_num;
-    auto dest_begin_iter =
-        device_data->_d_atoms_type.begin() + insertion_offset;
-    thrust::copy(source_begin_iter, source_end_iter, dest_begin_iter);
-  }
-  current_offset += recv_ghost_atoms_num * id_size;
-  {
-    auto source_raw_ptr = reinterpret_cast<rbmd::Real*>(
-        p_recv_buffer + current_offset);
-    thrust::device_ptr<rbmd::Real> source_begin_iter(source_raw_ptr);
-    thrust::device_ptr<rbmd::Real> source_end_iter =
-        source_begin_iter + recv_ghost_atoms_num;
-    auto dest_begin_iter = device_data->_d_px.begin() + insertion_offset;
-    thrust::copy(source_begin_iter, source_end_iter, dest_begin_iter);
-  }
-  current_offset += recv_ghost_atoms_num * real_size;
-  {
-    auto source_raw_ptr = reinterpret_cast<rbmd::Real*>(
-        p_recv_buffer + current_offset);
-    thrust::device_ptr<rbmd::Real> source_begin_iter(source_raw_ptr);
-    thrust::device_ptr<rbmd::Real> source_end_iter =
-        source_begin_iter + recv_ghost_atoms_num;
-    auto dest_begin_iter = device_data->_d_py.begin() + insertion_offset;
-    thrust::copy(source_begin_iter, source_end_iter, dest_begin_iter);
-  }
-  current_offset += recv_ghost_atoms_num * real_size;
-  {
-    auto source_raw_ptr = reinterpret_cast<rbmd::Real*>(
-        p_recv_buffer + current_offset);
-    thrust::device_ptr<rbmd::Real> source_begin_iter(source_raw_ptr);
-    thrust::device_ptr<rbmd::Real> source_end_iter =
-        source_begin_iter + recv_ghost_atoms_num;
-    auto dest_begin_iter = device_data->_d_pz.begin() + insertion_offset;
-    thrust::copy(source_begin_iter, source_end_iter, dest_begin_iter);
-  }
-  current_offset += recv_ghost_atoms_num * real_size;
-  if (has_charge) {
-    auto source_raw_ptr = reinterpret_cast<rbmd::Real*>(
-        p_recv_buffer + current_offset);
-    thrust::device_ptr<rbmd::Real> source_begin_iter(source_raw_ptr);
-    thrust::device_ptr<rbmd::Real> source_end_iter =
-        source_begin_iter + recv_ghost_atoms_num;
-    auto dest_begin_iter = device_data->_d_charge.begin() + insertion_offset;
-    thrust::copy(source_begin_iter, source_end_iter, dest_begin_iter);
-  }
+  op::UnpackGhostOp<device::DEVICE_GPU> unpack;
+  unpack(p_recv_buffer, recv_count, old_total,
+         thrust::raw_pointer_cast(device_data->_d_atoms_id.data()),
+         thrust::raw_pointer_cast(device_data->_d_atoms_type.data()),
+         thrust::raw_pointer_cast(device_data->_d_px.data()),
+         thrust::raw_pointer_cast(device_data->_d_py.data()),
+         thrust::raw_pointer_cast(device_data->_d_pz.data()),
+         has_charge
+             ? thrust::raw_pointer_cast(device_data->_d_charge.data())
+             : nullptr,
+         has_charge);
 
-  thrust::fill(linked_cell->_per_atom_cell_id.begin() + insertion_offset,
-               linked_cell->_per_atom_cell_id.begin() + insertion_offset +
-                   recv_count,
+  thrust::fill(linked_cell->_per_atom_cell_id.begin() + old_total,
+               linked_cell->_per_atom_cell_id.begin() + old_total + recv_count,
                0);
 }
 
@@ -1507,156 +1406,84 @@ void CommunicationPartner::CollectMoleculesInRegion(
 
   // ========== 阶段 1: 处理 Leaving 粒子 ==========
   if (msgType == LEAVING_ONLY || msgType == LEAVING_AND_HALO_COPIES) {
-    op::MarkLeavingAtomsInRegionOp<device::DEVICE_GPU>
-        mark_leaving_atoms_in_region_op;
+    const rbmd::Id native_atoms = linked_cell->_native_atoms_num;
+    const size_t native_atom_size = static_cast<size_t>(native_atoms);
+    leaving_flags.resize(native_atom_size);
+    _leaving_owner.resize(native_atom_size);
+    _leaving_shift_x.resize(native_atom_size);
+    _leaving_shift_y.resize(native_atom_size);
+    _leaving_shift_z.resize(native_atom_size);
 
-    struct CachedRegionData {
-      thrust::device_vector<int> indices;
-      int count;
-      size_t info_idx;
-    };
-    std::vector<CachedRegionData> cached_regions;
-    cached_regions.reserve(position_infos.size());
-    size_t total_leaving_atoms = 0;
-    // 仅在本次 Collect 调用内使用：避免同一 partner 的多个 region 重复打包。
-    thrust::device_vector<int> local_marked_in_call;
-
-    // Pass 1: Identify atoms, filter duplicates, and cache indices
-    for (size_t info_idx = 0; info_idx < position_infos.size(); ++info_idx) {
-      const rbmd::Id native_atoms = linked_cell->_native_atoms_num;
-      if (native_atoms == 0) {
-        break;
+    if (track_deferred_deletion) {
+      const size_t required_size =
+          static_cast<size_t>(linked_cell->_total_atoms_num);
+      if (deferred_mask->size() < required_size) {
+        deferred_mask->resize(required_size, 0);
       }
-      const size_t native_atom_size = static_cast<size_t>(native_atoms);
-      leaving_flags.resize(native_atom_size);
-      thrust::fill(leaving_flags.begin(), leaving_flags.end(), 0);
-      if (track_deferred_deletion) {
-        const size_t required_size =
-            static_cast<size_t>(linked_cell->_total_atoms_num);
-        if (deferred_mask->size() < required_size) {
-          deferred_mask->resize(required_size, 0);
-        }
-        if (local_marked_in_call.size() != native_atom_size) {
-          local_marked_in_call.resize(native_atom_size);
-          thrust::fill(local_marked_in_call.begin(),
-                       local_marked_in_call.end(), 0);
-        }
+    }
+
+    std::vector<op::GhostPlanRegion> host_regions(position_infos.size());
+    for (size_t region = 0; region < position_infos.size(); ++region) {
+      for (int dim = 0; dim < 3; ++dim) {
+        host_regions[region].low[dim] = position_infos[region]._leavingLow[dim];
+        host_regions[region].high[dim] =
+            position_infos[region]._leavingHigh[dim];
+        host_regions[region].shift[dim] = position_infos[region]._shift[dim];
       }
+    }
+    thrust::device_vector<op::GhostPlanRegion> device_regions(
+        host_regions.begin(), host_regions.end());
 
-      // 将单个PositionInfo拷贝到GPU
-      PositionInfo* d_pos_info;
-      MALLOC(&d_pos_info, sizeof(PositionInfo));
-      MEMCPY(d_pos_info, &position_infos[info_idx], sizeof(PositionInfo), H2D);
-
-      mark_leaving_atoms_in_region_op(
-          thrust::raw_pointer_cast(_device_data->_d_px.data()),
-          thrust::raw_pointer_cast(_device_data->_d_py.data()),
-          thrust::raw_pointer_cast(_device_data->_d_pz.data()),
-          d_pos_info,
-          native_atoms, thrust::raw_pointer_cast(leaving_flags.data()));
-
-      FREE(d_pos_info); // Must free here as we allocate new one in Pass 2 or re-allocate
-
-      if (track_deferred_deletion && native_atom_size > 0) {
-        auto mask_begin = deferred_mask->begin();
-        thrust::transform(
-            leaving_flags.begin(), leaving_flags.end(), mask_begin,
-            leaving_flags.begin(),
-            [] __device__(int new_mark, int already_marked) {
-              return already_marked ? 0 : new_mark;
-            });
-        // 同一 partner 的多个 region 之间也要去重。
-        thrust::transform(
-            leaving_flags.begin(), leaving_flags.end(),
-            local_marked_in_call.begin(),
-            leaving_flags.begin(),
-            [] __device__(int new_mark, int already_marked) {
-              return already_marked ? 0 : new_mark;
-            });
-      }
-
-      const int leaving_num_p =
-          thrust::reduce(leaving_flags.begin(), leaving_flags.end());
-      
-      if (leaving_num_p > 0) {
-        // Cache indices for this region
-        thrust::device_vector<int> indices(leaving_num_p);
-        thrust::copy_if(thrust::make_counting_iterator(0),
-                        thrust::make_counting_iterator(CheckedIntCount(
-                            native_atom_size, "leaving native_atom_size")),
-                        leaving_flags.begin(),
-                        indices.begin(),
-                        thrust::identity<int>());
-        
-        cached_regions.push_back({std::move(indices), leaving_num_p, info_idx});
-        total_leaving_atoms += leaving_num_p;
-
-        // 更新本调用内的去重标记；全局 deferred 标记在 sendlist 生成后按
-        // “实际发送列表”统一回填，避免“标记了但没发”的分叉。
-        if (track_deferred_deletion && native_atom_size > 0) {
-           auto mask_begin = local_marked_in_call.begin();
-           thrust::transform(
-               mask_begin, mask_begin + native_atom_size, leaving_flags.begin(),
-               mask_begin, [] __device__(int existing, int new_mark) {
-                 return existing | new_mark;
-               });
-        }
-      }
+    if (native_atoms > 0) {
+      op::MakeLeavingPlanOp<device::DEVICE_GPU> make_leaving_plan;
+      make_leaving_plan(thrust::raw_pointer_cast(_device_data->_d_px.data()),
+                        thrust::raw_pointer_cast(_device_data->_d_py.data()),
+                        thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+                        thrust::raw_pointer_cast(device_regions.data()),
+                        static_cast<rbmd::Id>(device_regions.size()),
+                        native_atoms,
+                        track_deferred_deletion
+                            ? thrust::raw_pointer_cast(deferred_mask->data())
+                            : nullptr,
+                        thrust::raw_pointer_cast(leaving_flags.data()),
+                        thrust::raw_pointer_cast(_leaving_owner.data()),
+                        thrust::raw_pointer_cast(_leaving_shift_x.data()),
+                        thrust::raw_pointer_cast(_leaving_shift_y.data()),
+                        thrust::raw_pointer_cast(_leaving_shift_z.data()));
     }
 
     int current_rank_for_log = 0;
     MPI_Comm_rank(MPI_COMM_WORLD, &current_rank_for_log);
     AppendTrackedNativeCellStateRows(test_current_step, current_rank_for_log,
-                                     _rank, box, linked_cell,
-                                     local_marked_in_call, position_infos);
+                                     _rank, box, linked_cell, leaving_flags,
+                                     position_infos);
 
-    // Pass 2: full 走 topology exchange；charge/atomic 保持 ref 的旧 SoA 布局。
+    const int total_leaving_atoms =
+        thrust::reduce(leaving_flags.begin(), leaving_flags.end(), 0);
+    _leaving_send_indices.resize(total_leaving_atoms);
+
+    // Pass 2: 生成一次完整 sendlist 和紧凑 shift；随后按 atom_style 单次打包。
     if (total_leaving_atoms > 0) {
+      thrust::copy_if(thrust::make_counting_iterator(0),
+                      thrust::make_counting_iterator(CheckedIntCount(
+                          native_atoms, "leaving native_atoms")),
+                      leaving_flags.begin(), _leaving_send_indices.begin(),
+                      thrust::identity<int>());
+
+      if (track_deferred_deletion && deferred_mask) {
+        const auto sent_marks = thrust::make_constant_iterator(1);
+        thrust::scatter(sent_marks, sent_marks + total_leaving_atoms,
+                        _leaving_send_indices.begin(), deferred_mask->begin());
+      }
+
       if ("full" == atom_style) {
         this->_send_buf.ResizeLeavingExchange(total_leaving_atoms,
                                               this->_send_buf._size_exchange);
 
-        thrust::device_vector<int> sendlist(total_leaving_atoms);
-        int current_offset = 0;
-        for (const auto& region : cached_regions) {
-          int count = region.count;
-          if (count > 0) {
-            thrust::copy(region.indices.begin(), region.indices.end(),
-                         sendlist.begin() + current_offset);
-            current_offset += count;
-          }
-        }
-        if (track_deferred_deletion && deferred_mask && !sendlist.empty()) {
-          thrust::device_vector<int> sent_marks(total_leaving_atoms, 1);
-          thrust::scatter(sent_marks.begin(), sent_marks.end(),
-                          sendlist.begin(), deferred_mask->begin());
-        }
-
-        thrust::device_vector<rbmd::Real> d_shift_x(total_leaving_atoms, 0);
-        thrust::device_vector<rbmd::Real> d_shift_y(total_leaving_atoms, 0);
-        thrust::device_vector<rbmd::Real> d_shift_z(total_leaving_atoms, 0);
-        {
-          int shift_offset = 0;
-          for (const auto& region : cached_regions) {
-            int count = region.count;
-            if (count == 0) continue;
-            const auto& pi = position_infos[region.info_idx];
-            thrust::fill(d_shift_x.begin() + shift_offset,
-                         d_shift_x.begin() + shift_offset + count,
-                         pi._shift[0]);
-            thrust::fill(d_shift_y.begin() + shift_offset,
-                         d_shift_y.begin() + shift_offset + count,
-                         pi._shift[1]);
-            thrust::fill(d_shift_z.begin() + shift_offset,
-                         d_shift_z.begin() + shift_offset + count,
-                         pi._shift[2]);
-            shift_offset += count;
-          }
-        }
-
         op::TopologyPackParams pack_params{};
         pack_params.nsend = total_leaving_atoms;
-        pack_params.sendlist = thrust::raw_pointer_cast(sendlist.data());
+        pack_params.sendlist =
+            thrust::raw_pointer_cast(_leaving_send_indices.data());
         pack_params.buf = thrust::raw_pointer_cast(
             this->_send_buf._leaving_atoms_double.data());
         pack_params.size_exchange = this->_send_buf._size_exchange;
@@ -1685,6 +1512,9 @@ void CommunicationPartner::CollectMoleculesInRegion(
             thrust::raw_pointer_cast(_device_data->_d_molecular_id.data());
         pack_params.d_charge =
             thrust::raw_pointer_cast(_device_data->_d_charge.data());
+        pack_params.d_image_x = thrust::raw_pointer_cast(_device_data->_d_flagX.data());
+        pack_params.d_image_y = thrust::raw_pointer_cast(_device_data->_d_flagY.data());
+        pack_params.d_image_z = thrust::raw_pointer_cast(_device_data->_d_flagZ.data());
         pack_params.d_num_bond =
             thrust::raw_pointer_cast(_device_data->d_num_bond.data());
         pack_params.d_bond_type =
@@ -1734,9 +1564,12 @@ void CommunicationPartner::CollectMoleculesInRegion(
         pack_params.d_special =
             thrust::raw_pointer_cast(_device_data->d_special.data());
         pack_params.maxspecial = _device_data->maxspecial;
-        pack_params.d_shift_x = thrust::raw_pointer_cast(d_shift_x.data());
-        pack_params.d_shift_y = thrust::raw_pointer_cast(d_shift_y.data());
-        pack_params.d_shift_z = thrust::raw_pointer_cast(d_shift_z.data());
+        pack_params.d_shift_x =
+            thrust::raw_pointer_cast(_leaving_shift_x.data());
+        pack_params.d_shift_y =
+            thrust::raw_pointer_cast(_leaving_shift_y.data());
+        pack_params.d_shift_z =
+            thrust::raw_pointer_cast(_leaving_shift_z.data());
         pack_params.box_min[0] = box->_coord_min[0];
         pack_params.box_min[1] = box->_coord_min[1];
         pack_params.box_min[2] = box->_coord_min[2];
@@ -1747,139 +1580,42 @@ void CommunicationPartner::CollectMoleculesInRegion(
         op::PackExchangeTopologyOp<device::DEVICE_GPU> pack_op;
         pack_op(pack_params);
       } else {
-        op::ProcessLeavingAtomOp<device::DEVICE_GPU> process_leaving_atom_op;
         this->_send_buf.ResizeLeaving(total_leaving_atoms);
-
-        const size_t id_size = sizeof(rbmd::Id);
-        const size_t real_size = sizeof(rbmd::Real);
-        const size_t total_count = total_leaving_atoms;
-        size_t global_offset_id = 0;
-        size_t global_offset_type = global_offset_id + total_count * id_size;
-        size_t global_offset_mol = global_offset_type + total_count * id_size;
-        size_t global_offset_px =
-            ("full" == atom_style) ? (global_offset_mol + total_count * id_size)
-                                   : global_offset_mol;
-        size_t global_offset_py = global_offset_px + total_count * real_size;
-        size_t global_offset_pz = global_offset_py + total_count * real_size;
-        size_t global_offset_vx = global_offset_pz + total_count * real_size;
-        size_t global_offset_vy = global_offset_vx + total_count * real_size;
-        size_t global_offset_vz = global_offset_vy + total_count * real_size;
-        size_t global_offset_charge = global_offset_vz + total_count * real_size;
-
-        char* p_buffer_base =
-            thrust::raw_pointer_cast(this->_send_buf._leaving_atoms.data());
-        size_t current_atom_offset = 0;
-        for (const auto& region : cached_regions) {
-          int count = region.count;
-          if (count == 0) continue;
-
-          {
-            thrust::device_ptr<rbmd::Id> dest_ptr(
-                reinterpret_cast<rbmd::Id*>(p_buffer_base + global_offset_id) +
-                current_atom_offset);
-            thrust::gather(region.indices.begin(), region.indices.end(),
-                           _device_data->_d_atoms_id.begin(), dest_ptr);
-          }
-          {
-            thrust::device_ptr<rbmd::Id> dest_ptr(
-                reinterpret_cast<rbmd::Id*>(p_buffer_base + global_offset_type) +
-                current_atom_offset);
-            thrust::gather(region.indices.begin(), region.indices.end(),
-                           _device_data->_d_atoms_type.begin(), dest_ptr);
-          }
-          if ("full" == atom_style) {
-            thrust::device_ptr<rbmd::Id> dest_ptr(
-                reinterpret_cast<rbmd::Id*>(p_buffer_base + global_offset_mol) +
-                current_atom_offset);
-            thrust::gather(region.indices.begin(), region.indices.end(),
-                           _device_data->_d_molecular_id.begin(), dest_ptr);
-          }
-          {
-            thrust::device_ptr<rbmd::Real> dest_ptr(
-                reinterpret_cast<rbmd::Real*>(p_buffer_base + global_offset_px) +
-                current_atom_offset);
-            thrust::gather(region.indices.begin(), region.indices.end(),
-                           _device_data->_d_px.begin(), dest_ptr);
-          }
-          {
-            thrust::device_ptr<rbmd::Real> dest_ptr(
-                reinterpret_cast<rbmd::Real*>(p_buffer_base + global_offset_py) +
-                current_atom_offset);
-            thrust::gather(region.indices.begin(), region.indices.end(),
-                           _device_data->_d_py.begin(), dest_ptr);
-          }
-          {
-            thrust::device_ptr<rbmd::Real> dest_ptr(
-                reinterpret_cast<rbmd::Real*>(p_buffer_base + global_offset_pz) +
-                current_atom_offset);
-            thrust::gather(region.indices.begin(), region.indices.end(),
-                           _device_data->_d_pz.begin(), dest_ptr);
-          }
-          {
-            thrust::device_ptr<rbmd::Real> dest_ptr(
-                reinterpret_cast<rbmd::Real*>(p_buffer_base + global_offset_vx) +
-                current_atom_offset);
-            thrust::gather(region.indices.begin(), region.indices.end(),
-                           _device_data->_d_vx.begin(), dest_ptr);
-          }
-          {
-            thrust::device_ptr<rbmd::Real> dest_ptr(
-                reinterpret_cast<rbmd::Real*>(p_buffer_base + global_offset_vy) +
-                current_atom_offset);
-            thrust::gather(region.indices.begin(), region.indices.end(),
-                           _device_data->_d_vy.begin(), dest_ptr);
-          }
-          {
-            thrust::device_ptr<rbmd::Real> dest_ptr(
-                reinterpret_cast<rbmd::Real*>(p_buffer_base + global_offset_vz) +
-                current_atom_offset);
-            thrust::gather(region.indices.begin(), region.indices.end(),
-                           _device_data->_d_vz.begin(), dest_ptr);
-          }
-          if ("charge" == atom_style || "full" == atom_style) {
-            thrust::device_ptr<rbmd::Real> dest_ptr(
-                reinterpret_cast<rbmd::Real*>(p_buffer_base + global_offset_charge) +
-                current_atom_offset);
-            thrust::gather(region.indices.begin(), region.indices.end(),
-                           _device_data->_d_charge.begin(), dest_ptr);
-          }
-
-          PositionInfo* d_pos_info;
-          MALLOC(&d_pos_info, sizeof(PositionInfo));
-          MEMCPY(d_pos_info, &position_infos[region.info_idx], sizeof(PositionInfo),
-                 H2D);
-          rbmd::Real* d_p_px =
-              reinterpret_cast<rbmd::Real*>(p_buffer_base + global_offset_px) +
-              current_atom_offset;
-          rbmd::Real* d_p_py =
-              reinterpret_cast<rbmd::Real*>(p_buffer_base + global_offset_py) +
-              current_atom_offset;
-          rbmd::Real* d_p_pz =
-              reinterpret_cast<rbmd::Real*>(p_buffer_base + global_offset_pz) +
-              current_atom_offset;
-          process_leaving_atom_op(d_p_px, d_p_py, d_p_pz, d_pos_info,
-                                  static_cast<rbmd::Id>(count), *box);
-          FREE(d_pos_info);
-          current_atom_offset += count;
-        }
-
-        if (track_deferred_deletion && deferred_mask) {
-          auto mask_begin = deferred_mask->begin();
-          for (const auto& region : cached_regions) {
-            if (region.count <= 0) {
-              continue;
-            }
-            thrust::device_vector<int> sent_marks(region.count, 1);
-            thrust::scatter(sent_marks.begin(), sent_marks.end(),
-                            region.indices.begin(), mask_begin);
-          }
-        }
+        const bool has_charge = atom_style == "charge";
+        op::PackLeavingSoAOp<device::DEVICE_GPU> pack_leaving;
+        pack_leaving(
+            thrust::raw_pointer_cast(_leaving_send_indices.data()),
+            thrust::raw_pointer_cast(_leaving_shift_x.data()),
+            thrust::raw_pointer_cast(_leaving_shift_y.data()),
+            thrust::raw_pointer_cast(_leaving_shift_z.data()),
+            total_leaving_atoms,
+            thrust::raw_pointer_cast(_device_data->_d_atoms_id.data()),
+            thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
+            nullptr, thrust::raw_pointer_cast(_device_data->_d_px.data()),
+            thrust::raw_pointer_cast(_device_data->_d_py.data()),
+            thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+            thrust::raw_pointer_cast(_device_data->_d_vx.data()),
+            thrust::raw_pointer_cast(_device_data->_d_vy.data()),
+            thrust::raw_pointer_cast(_device_data->_d_vz.data()),
+            has_charge
+                ? thrust::raw_pointer_cast(_device_data->_d_charge.data())
+                : nullptr,
+            thrust::raw_pointer_cast(_device_data->_d_flagX.data()),
+            thrust::raw_pointer_cast(_device_data->_d_flagY.data()),
+            thrust::raw_pointer_cast(_device_data->_d_flagZ.data()),
+            false, has_charge,
+            thrust::raw_pointer_cast(this->_send_buf._leaving_atoms.data()),
+            *box);
       }
     }
   }
 
   // ========== 阶段 2: 处理 Halo 粒子 ==========
   if (msgType == HALO_COPIES || msgType == LEAVING_AND_HALO_COPIES) {
+    _halo_send_indices.clear();
+    _halo_shift_x.clear();
+    _halo_shift_y.clear();
+    _halo_shift_z.clear();
     // 根据文档3.2.3节的三阶段通信方案：
     // - 第1阶段（x维）：处理 [0, native_num)
     // - 第2阶段（y维）：处理 [0, native_num + x维halo)
@@ -1903,55 +1639,36 @@ void CommunicationPartner::CollectMoleculesInRegion(
     const auto& tracked_gids = GetHaloDecisionTrackedGids();
     
     halo_flags.resize(range_size);
-    thrust::fill(halo_flags.begin(), halo_flags.end(), 0);
     thrust::device_vector<int> halo_owner(range_size);
-    thrust::fill(halo_owner.begin(), halo_owner.end(), -1);
+    thrust::device_vector<rbmd::Real> plan_shift_x(range_size);
+    thrust::device_vector<rbmd::Real> plan_shift_y(range_size);
+    thrust::device_vector<rbmd::Real> plan_shift_z(range_size);
     
     // 创建偏移后的指针，指向要处理的原子范围
     rbmd::Real* px_offset = thrust::raw_pointer_cast(_device_data->_d_px.data()) + actual_start;
     rbmd::Real* py_offset = thrust::raw_pointer_cast(_device_data->_d_py.data()) + actual_start;
     rbmd::Real* pz_offset = thrust::raw_pointer_cast(_device_data->_d_pz.data()) + actual_start;
     
-    // 调试输出
-    int current_rank = 100;
-    MPI_Comm_rank(MPI_COMM_WORLD, &current_rank);
-// #ifndef NDEBUG
-//     if (current_rank == 7) {  // 只输出rank 7的信息用于调试
-//       std::cout << "[DEBUG Rank " << current_rank << "] Processing halo atoms:" << std::endl;
-//       std::cout << "  - Range: [" << actual_start << ", " << actual_end << ")" << std::endl;
-//       std::cout << "  - Range size: " << range_size << std::endl;
-//       std::cout << "  - Num PositionInfos: " << position_infos.size() << std::endl;
-//       for (size_t i = 0; i < position_infos.size(); ++i) {
-//         std::cout << "  - PositionInfo[" << i << "] copies: "
-//                   << "[" << position_infos[i]._copiesLow[0] << ", " << position_infos[i]._copiesLow[1] << ", " << position_infos[i]._copiesLow[2] << "] to "
-//                   << "[" << position_infos[i]._copiesHigh[0] << ", " << position_infos[i]._copiesHigh[1] << ", " << position_infos[i]._copiesHigh[2] << "]"
-//                   << std::endl;
-//       }
-//     }
-// #endif
-
-    op::MarkHaloAtomsInRegionOp<device::DEVICE_GPU> mark_halo_atoms_in_region_op;
-
-    // 逐个处理每个PositionInfo
-    for (size_t info_idx = 0; info_idx < position_infos.size(); ++info_idx) {
-      // 将单个PositionInfo拷贝到GPU
-      PositionInfo* d_pos_info;
-      MALLOC(&d_pos_info, sizeof(PositionInfo));
-      MEMCPY(d_pos_info, &position_infos[info_idx], sizeof(PositionInfo), H2D);
-
-      // 标记在copies区域中的原子
-      mark_halo_atoms_in_region_op(
-          px_offset,
-          py_offset,
-          pz_offset,
-          d_pos_info,
-          range_size, // 使用实际范围大小
-          thrust::raw_pointer_cast(halo_flags.data()),
-          thrust::raw_pointer_cast(halo_owner.data()),
-          static_cast<int>(info_idx));
-
-      CHECK_RUNTIME(FREE(d_pos_info));
+    std::vector<op::GhostPlanRegion> host_regions(position_infos.size());
+    for (size_t i = 0; i < position_infos.size(); ++i) {
+      for (int dim = 0; dim < 3; ++dim) {
+        host_regions[i].low[dim] = position_infos[i]._copiesLow[dim];
+        host_regions[i].high[dim] = position_infos[i]._copiesHigh[dim];
+        host_regions[i].shift[dim] = position_infos[i]._shift[dim];
+      }
     }
+    thrust::device_vector<op::GhostPlanRegion> device_regions(
+        host_regions.begin(), host_regions.end());
+    op::MakeGhostPlanOp<device::DEVICE_GPU> make_plan;
+    make_plan(
+        px_offset, py_offset, pz_offset,
+        thrust::raw_pointer_cast(device_regions.data()),
+        static_cast<rbmd::Id>(device_regions.size()), range_size,
+        thrust::raw_pointer_cast(halo_flags.data()),
+        thrust::raw_pointer_cast(halo_owner.data()),
+        thrust::raw_pointer_cast(plan_shift_x.data()),
+        thrust::raw_pointer_cast(plan_shift_y.data()),
+        thrust::raw_pointer_cast(plan_shift_z.data()));
 
     std::vector<int> h_raw_halo_marks;
     std::vector<int> h_leaving_mask;
@@ -1996,145 +1713,45 @@ void CommunicationPartner::CollectMoleculesInRegion(
 
     int halo_num = thrust::reduce(halo_flags.begin(), halo_flags.end());
 
-// #ifndef NDEBUG
-//     if (current_rank == 7) {
-//       std::cout << "  - Marked halo atoms: " << halo_num << std::endl;
-//     }
-// #endif
-
     // 调整ghost缓冲区大小
     this->_send_buf.ResizeGhost(halo_num);
 
     if (halo_num > 0) {
-      // 打包Halo粒子
-      const size_t id_size = sizeof(rbmd::Id);
-      const size_t real_size = sizeof(rbmd::Real);
-      char* p_ghost_buffer = thrust::raw_pointer_cast(
-          _send_buf._ghost_atoms.data());
-
-      size_t current_offset = 0;
-
-      // 拷贝 ID
-      {
-        auto target_raw_ptr = reinterpret_cast<rbmd::Id*>(
-          p_ghost_buffer + current_offset);
-        thrust::device_ptr<rbmd::Id> target_iterator(target_raw_ptr);
-        thrust::copy_if(_device_data->_d_atoms_id.begin() + actual_start,
-                        _device_data->_d_atoms_id.begin() + actual_end,
-                        halo_flags.begin(),
-                        target_iterator,
-                        thrust::identity<int>());
-      }
-      current_offset += halo_num * id_size;
-
-      // 拷贝 type
-      {
-        auto target_raw_ptr = reinterpret_cast<rbmd::Id*>(
-          p_ghost_buffer + current_offset);
-        thrust::device_ptr<rbmd::Id> target_iterator(target_raw_ptr);
-        thrust::copy_if(_device_data->_d_atoms_type.begin() + actual_start,
-                        _device_data->_d_atoms_type.begin() + actual_end,
-                        halo_flags.begin(),
-                        target_iterator,
-                        thrust::identity<int>());
-      }
-      current_offset += halo_num * id_size;
-
-      // 拷贝坐标 px, py, pz
-      {
-        auto target_raw_ptr = reinterpret_cast<rbmd::Real*>(
-          p_ghost_buffer + current_offset);
-        thrust::device_ptr<rbmd::Real> target_iterator(target_raw_ptr);
-        thrust::copy_if(_device_data->_d_px.begin() + actual_start,
-                        _device_data->_d_px.begin() + actual_end,
-                        halo_flags.begin(),
-                        target_iterator,
-                        thrust::identity<int>());
-      }
-      current_offset += halo_num * real_size;
-
-      {
-        auto target_raw_ptr = reinterpret_cast<rbmd::Real*>(
-          p_ghost_buffer + current_offset);
-        thrust::device_ptr<rbmd::Real> target_iterator(target_raw_ptr);
-        thrust::copy_if(_device_data->_d_py.begin() + actual_start,
-                        _device_data->_d_py.begin() + actual_end,
-                        halo_flags.begin(),
-                        target_iterator,
-                        thrust::identity<int>());
-      }
-      current_offset += halo_num * real_size;
-
-      {
-        auto target_raw_ptr = reinterpret_cast<rbmd::Real*>(
-          p_ghost_buffer + current_offset);
-        thrust::device_ptr<rbmd::Real> target_iterator(target_raw_ptr);
-        thrust::copy_if(_device_data->_d_pz.begin() + actual_start,
-                        _device_data->_d_pz.begin() + actual_end,
-                        halo_flags.begin(),
-                        target_iterator,
-                        thrust::identity<int>());
-      }
-      current_offset += halo_num * real_size;
-
-      // 拷贝电荷（如果需要）
-      if ("charge" == atom_style || "full" == atom_style) {
-        {
-          auto target_raw_ptr = reinterpret_cast<rbmd::Real*>(
-            p_ghost_buffer + current_offset);
-          thrust::device_ptr<rbmd::Real> target_iterator(target_raw_ptr);
-          thrust::copy_if(_device_data->_d_charge.begin() + actual_start,
-                          _device_data->_d_charge.begin() + actual_end,
-                          halo_flags.begin(),
-                          target_iterator,
-                          thrust::identity<int>());
-        }
-      }
-
-      thrust::device_vector<int> halo_atom_owner_indices(halo_num);
+      _halo_send_indices.resize(halo_num);
+      _halo_shift_x.resize(halo_num);
+      _halo_shift_y.resize(halo_num);
+      _halo_shift_z.resize(halo_num);
       thrust::copy_if(
-          halo_owner.begin(), halo_owner.end(),
-          halo_flags.begin(),
-          halo_atom_owner_indices.begin(),
+          thrust::make_counting_iterator<rbmd::Id>(actual_start),
+          thrust::make_counting_iterator<rbmd::Id>(actual_end),
+          halo_flags.begin(), _halo_send_indices.begin(),
           thrust::identity<int>());
+      thrust::copy_if(plan_shift_x.begin(), plan_shift_x.end(),
+                      halo_flags.begin(), _halo_shift_x.begin(),
+                      thrust::identity<int>());
+      thrust::copy_if(plan_shift_y.begin(), plan_shift_y.end(),
+                      halo_flags.begin(), _halo_shift_y.begin(),
+                      thrust::identity<int>());
+      thrust::copy_if(plan_shift_z.begin(), plan_shift_z.end(),
+                      halo_flags.begin(), _halo_shift_z.begin(),
+                      thrust::identity<int>());
 
-      // 对发送缓冲区中的halo数据应用周期性边界处理
-      char* p_ghost_buffer_k = thrust::raw_pointer_cast(
-          _send_buf._ghost_atoms.data());
-
-      size_t current_offset_k = 0;
-
-      // 跳过ID和type
-      current_offset_k += halo_num * id_size * 2;
-
-      // 获取坐标指针
-      rbmd::Real* d_p_px = reinterpret_cast<rbmd::Real*>(
-        p_ghost_buffer_k + current_offset_k);
-      current_offset_k += halo_num * real_size;
-      rbmd::Real* d_p_py = reinterpret_cast<rbmd::Real*>(
-        p_ghost_buffer_k + current_offset_k);
-      current_offset_k += halo_num * real_size;
-      rbmd::Real* d_p_pz = reinterpret_cast<rbmd::Real*>(
-        p_ghost_buffer_k + current_offset_k);
-      int* d_halo_owner_indices =
-          thrust::raw_pointer_cast(halo_atom_owner_indices.data());
-
-      // 逐个处理Halo原子的周期性边界条件
-      op::ProcessHaloAtomOp<device::DEVICE_GPU> process_halo_atom_op;
-      for (size_t info_idx = 0; info_idx < position_infos.size(); ++info_idx) {
-        // 将单个PositionInfo拷贝到GPU
-        PositionInfo* d_pos_info;
-        MALLOC(&d_pos_info, sizeof(PositionInfo));
-        MEMCPY(d_pos_info, &position_infos[info_idx], sizeof(PositionInfo), H2D);
-
-        process_halo_atom_op(d_p_px, d_p_py, d_p_pz,
-                            d_pos_info,
-                            halo_num, *box,
-                            d_halo_owner_indices,
-                            static_cast<int>(info_idx));
-
-        FREE(d_pos_info);
-      }
+      const bool has_charge = atom_style == "charge" || atom_style == "full";
+      op::PackGhostOp<device::DEVICE_GPU> pack;
+      pack(thrust::raw_pointer_cast(_halo_send_indices.data()),
+           thrust::raw_pointer_cast(_halo_shift_x.data()),
+           thrust::raw_pointer_cast(_halo_shift_y.data()),
+           thrust::raw_pointer_cast(_halo_shift_z.data()), halo_num,
+           thrust::raw_pointer_cast(_device_data->_d_atoms_id.data()),
+           thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
+           thrust::raw_pointer_cast(_device_data->_d_px.data()),
+           thrust::raw_pointer_cast(_device_data->_d_py.data()),
+           thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+           has_charge
+               ? thrust::raw_pointer_cast(_device_data->_d_charge.data())
+               : nullptr,
+           has_charge,
+           thrust::raw_pointer_cast(_send_buf._ghost_atoms.data()));
     }
   }
 }
@@ -2210,7 +1827,7 @@ void CommunicationPartner::OutputLeavingAtomsToCSV(const std::string& filename,
   // 创建原子信息映射，以ID为key进行排序
   std::map<rbmd::Id, std::vector<std::string>> atom_info_map;
 
-  // 缓冲区按属性顺序存储（SoA），依次为 ID、type、[molecule_id]、坐标、速度、[电荷]
+  // 缓冲区按属性顺序存储（SoA），依次为 ID、type、[molecule_id]、image[3]、坐标、速度、[电荷]、unwrapped[3]
 
   size_t offset_block = 0;
   std::vector<rbmd::Id> ids(recv_leaving_atoms_num);
@@ -2228,6 +1845,11 @@ void CommunicationPartner::OutputLeavingAtomsToCSV(const std::string& filename,
     molecule_ids.resize(recv_leaving_atoms_num);
     std::memcpy(molecule_ids.data(), p_recv_buffer + offset_block,
                 recv_leaving_atoms_num * id_size);
+    offset_block += recv_leaving_atoms_num * id_size;
+  }
+
+  offset_block += 3 * recv_leaving_atoms_num * id_size;  // image x/y/z
+  if (atom_style != "full" && sizeof(rbmd::Real) > sizeof(rbmd::Id)) {
     offset_block += recv_leaving_atoms_num * id_size;
   }
 

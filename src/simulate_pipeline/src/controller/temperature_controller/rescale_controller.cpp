@@ -1,3 +1,4 @@
+#include "common/revision_diagnostics.h"
 #include "rescale_controller.h"
 
 #include <thrust/device_ptr.h>
@@ -55,7 +56,9 @@ void RescaleController::Init() {
 void RescaleController::Update() {
   //ComputeTemp();
 
+  rbmd::revision::ThermostatWork revision_work;
   UpdataVelocity();
+  revision_work.Finish();
 }
 
 void RescaleController::ComputeTemperature() {

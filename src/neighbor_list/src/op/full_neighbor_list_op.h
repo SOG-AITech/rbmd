@@ -12,7 +12,8 @@ struct ComputeFullNeighborsOp {
                   Cell* cells,
                   rbmd::Id neighbor_num,
                   rbmd::Id total_cell,
-                  rbmd::Id cell_count_within_cutoff);
+                  rbmd::Id cell_count_within_cutoff,
+                  const rbmd::Id* stencil_indices);
 };
 
 template <typename DEVICE>
@@ -22,32 +23,19 @@ struct ComputeFullNeighborsWithoutPBCOp {
 };
 
 template <typename DEVICE>
-struct EstimateFullNeighborListOp {
-  void operator()(rbmd::Id* per_atom_cell_id,
-                  rbmd::Id* in_atom_list_start_index,
-                  rbmd::Id* in_atom_list_end_index, rbmd::Real cutoff_2,
-                  rbmd::Id total_atom_num, rbmd::Real* px, rbmd::Real* py,
-                  rbmd::Real* pz, rbmd::Id* sorted_atom_indices,
-                  rbmd::Id* neighbour_num,
-                  rbmd::Id* max_neighbour_num, Box box,
-                  LinkedCellDeviceDataPtr* linked_cell,
-                  rbmd::Id neighbor_cell_num,
-                  rbmd::Id cell_count_within_cutoff);
-};
-
-template <typename DEVICE>
 struct GenerateFullNeighborListOp {
   void operator()(rbmd::Id* per_atom_cell_id,
                   rbmd::Id* in_atom_list_start_index,
                   rbmd::Id* in_atom_list_end_index, rbmd::Real cutoff_2,
                   rbmd::Id total_atom_num, rbmd::Real* px, rbmd::Real* py,
                   rbmd::Real* pz, rbmd::Id* sorted_atom_indices,
-                  rbmd::Id* max_neighbor_num,
+                  const rbmd::Id* neighbor_cell,
+                  rbmd::Id neighbor_cell_num, rbmd::Id* neighbor_num,
+                  rbmd::Id max_neighbor_num,
                   rbmd::Id* neighbor_start, rbmd::Id* neighbor_end,
                   rbmd::Id* neighbors, Box box, rbmd::Id* should_realloc,
-                  LinkedCellDeviceDataPtr* linked_cell,
-                  rbmd::Id neighbor_cell_num,
-                  rbmd::Id cell_count_within_cutoff);
+                  rbmd::Id* required_neighbor_capacity,
+                  rbmd::Id threads_per_particle);
 };
 
 template <>
@@ -56,7 +44,8 @@ struct ComputeFullNeighborsOp<device::DEVICE_GPU> {
                   Cell* cells,
                   rbmd::Id neighbor_num,
                   rbmd::Id total_cell,
-                  rbmd::Id cell_count_within_cutoff);
+                  rbmd::Id cell_count_within_cutoff,
+                  const rbmd::Id* stencil_indices);
 };
 
 template <>
@@ -66,32 +55,19 @@ struct ComputeFullNeighborsWithoutPBCOp<device::DEVICE_GPU> {
 };
 
 template <>
-struct EstimateFullNeighborListOp<device::DEVICE_GPU> {
-  void operator()(rbmd::Id* per_atom_cell_id,
-                  rbmd::Id* in_atom_list_start_index,
-                  rbmd::Id* in_atom_list_end_index, rbmd::Real cutoff_2,
-                  rbmd::Id total_atom_num, rbmd::Real* px, rbmd::Real* py,
-                  rbmd::Real* pz, rbmd::Id* sorted_atom_indices,
-                  rbmd::Id* neighbour_num,
-                  rbmd::Id* max_neighbour_num, Box box,
-                  LinkedCellDeviceDataPtr* linked_cell,
-                  rbmd::Id neighbor_cell_num,
-                  rbmd::Id cell_count_within_cutoff);
-};
-
-template <>
 struct GenerateFullNeighborListOp<device::DEVICE_GPU> {
   void operator()(rbmd::Id* per_atom_cell_id,
                   rbmd::Id* in_atom_list_start_index,
                   rbmd::Id* in_atom_list_end_index, rbmd::Real cutoff_2,
                   rbmd::Id total_atom_num, rbmd::Real* px, rbmd::Real* py,
                   rbmd::Real* pz, rbmd::Id* sorted_atom_indices,
-                  rbmd::Id* max_neighbor_num,
+                  const rbmd::Id* neighbor_cell,
+                  rbmd::Id neighbor_cell_num, rbmd::Id* neighbor_num,
+                  rbmd::Id max_neighbor_num,
                   rbmd::Id* neighbor_start, rbmd::Id* neighbor_end,
                   rbmd::Id* neighbors, Box box, rbmd::Id* should_realloc,
-                  LinkedCellDeviceDataPtr* linked_cell,
-                  rbmd::Id neighbor_cell_num,
-                  rbmd::Id cell_count_within_cutoff);
+                  rbmd::Id* required_neighbor_capacity,
+                  rbmd::Id threads_per_particle);
 };
 } // namespace op
 

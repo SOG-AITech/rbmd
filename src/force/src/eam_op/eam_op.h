@@ -35,7 +35,7 @@ struct ComputeFpVerlet
         const rbmd::Real* py,
         const rbmd::Real* pz,
         rbmd::Real* eam_fp,
-        rbmd::Real* energy_embedding);
+        rbmd::Energy* energy_embedding);
 };
 
 //Verlet:: EAMForceVerletOp
@@ -60,7 +60,7 @@ struct ComputeEAMForceVerlet
         rbmd::Real* fx,
         rbmd::Real* fy,
         rbmd::Real* fz,
-        rbmd::Real* energy_pair);
+        rbmd::Energy* energy_pair);
 };
 
 template <typename DEVICE>
@@ -70,7 +70,9 @@ struct ComputeFpDirect {
                   const Real7* rhor_spline, const Real7* frho_spline,
                   const rbmd::Real* px, const rbmd::Real* py,
                   const rbmd::Real* pz, rbmd::Real* eam_fp,
-                  rbmd::Real* energy_embedding);
+                  rbmd::Energy* energy_embedding,
+                  const Real7* z2r_spline = nullptr,
+                  rbmd::Energy* energy_pair = nullptr);
 };
 
 template <typename DEVICE>
@@ -93,7 +95,7 @@ struct ComputeEAMEnergyDirect {
                   const Real7* rhor_spline, const Real7* z2r_spline,
                   const rbmd::Real* px, const rbmd::Real* py,
                   const rbmd::Real* pz, const rbmd::Real* eam_fp,
-                  rbmd::Real* energy_pair);
+                  rbmd::Energy* energy_pair);
 };
 
 //RBL :: EAMRhoRBL
@@ -194,7 +196,7 @@ struct ComputeEAMEnergy
         const rbmd::Real* py,
         const rbmd::Real* pz,
         const rbmd::Real* eam_fp,
-        rbmd::Real* energy_pair);
+        rbmd::Energy* energy_pair);
 };
 
 
@@ -219,7 +221,7 @@ struct ComputeFpVerlet<device::DEVICE_GPU>
         const rbmd::Real* py,
         const rbmd::Real* pz,
         rbmd::Real* eam_fp,
-        rbmd::Real* energy_embedding);
+        rbmd::Energy* energy_embedding);
 };
 
 template <>
@@ -232,7 +234,7 @@ struct ComputeEAMForceVerlet<device::DEVICE_GPU> {
                   const rbmd::Real* px,
                   const rbmd::Real* py, const rbmd::Real* pz,
                   rbmd::Real* eam_fp, rbmd::Real* fx, rbmd::Real* fy,
-                  rbmd::Real* fz, rbmd::Real* energy_pair);
+                  rbmd::Real* fz, rbmd::Energy* energy_pair);
 };
 
 template <>
@@ -242,7 +244,9 @@ struct ComputeFpDirect<device::DEVICE_GPU> {
                   const Real7* rhor_spline, const Real7* frho_spline,
                   const rbmd::Real* px, const rbmd::Real* py,
                   const rbmd::Real* pz, rbmd::Real* eam_fp,
-                  rbmd::Real* energy_embedding);
+                  rbmd::Energy* energy_embedding,
+                  const Real7* z2r_spline = nullptr,
+                  rbmd::Energy* energy_pair = nullptr);
 };
 
 template <>
@@ -265,7 +269,7 @@ struct ComputeEAMEnergyDirect<device::DEVICE_GPU> {
                   const Real7* rhor_spline, const Real7* z2r_spline,
                   const rbmd::Real* px, const rbmd::Real* py,
                   const rbmd::Real* pz, const rbmd::Real* eam_fp,
-                  rbmd::Real* energy_pair);
+                  rbmd::Energy* energy_pair);
 };
 
 
@@ -366,7 +370,7 @@ struct ComputeEAMEnergy<device::DEVICE_GPU>
         const rbmd::Real* py,
         const rbmd::Real* pz,
         const rbmd::Real* eam_fp,
-        rbmd::Real* energy_pair);
+        rbmd::Energy* energy_pair);
 };
 
 }

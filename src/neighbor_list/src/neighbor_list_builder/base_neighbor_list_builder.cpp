@@ -5,24 +5,22 @@
 #include <thrust/copy.h>
 #include <thrust/detail/raw_pointer_cast.h>
 #include <thrust/device_ptr.h>
-#include <thrust/equal.h>
 #include <thrust/execution_policy.h>
 #include <thrust/functional.h>
 #include <thrust/host_vector.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/reduce.h>
 #include <thrust/scan.h>
-#include <thrust/transform_reduce.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_set>
 
 #include "common/device_types.h"
 #include "common/mpi_root_guard.hpp"
@@ -31,9 +29,11 @@
 #include "force_box_selector.h"
 #include "linked_cell/linked_cell_locator.h"
 #include "neighbor_list_op.h"
+#include "cache_check_op.h"
 
 #ifdef USE_MPI
 #include "mpi.h"
+#include "rbmd_parallel_until_locator.h"
 #endif
 
 extern rbmd::Id test_current_step;
@@ -57,18 +57,31 @@ int EnvIntOrDefault(const char* name, int fallback) {
 struct NeighborSkinCacheDebugConfig {
   bool enabled{false};
   int every{1};
+  bool detail_enabled{false};
+  int detail_start{205};
+  int detail_end{208};
 };
 
 const NeighborSkinCacheDebugConfig& GetNeighborSkinCacheDebugConfig() {
   static const NeighborSkinCacheDebugConfig cfg{
       EnvFlagEnabled("RBMD_DEBUG_NEIGHBOR_SKIN"),
-      EnvIntOrDefault("RBMD_DEBUG_NEIGHBOR_SKIN_EVERY", 1)};
+      EnvIntOrDefault("RBMD_DEBUG_NEIGHBOR_SKIN_EVERY", 1),
+      EnvFlagEnabled("RBMD_DEBUG_NEIGHBOR_SKIN_DETAIL"),
+      EnvIntOrDefault("RBMD_DEBUG_NEIGHBOR_SKIN_DETAIL_START", 205),
+      EnvIntOrDefault("RBMD_DEBUG_NEIGHBOR_SKIN_DETAIL_END", 208)};
   return cfg;
 }
 
 bool ShouldWriteNeighborSkinCacheDebug(rbmd::Id step) {
   const auto& cfg = GetNeighborSkinCacheDebugConfig();
   return cfg.enabled && cfg.every > 0 && (step % cfg.every) == 0;
+}
+
+bool ShouldWriteNeighborSkinCacheDetail(rbmd::Id step) {
+  const auto& cfg = GetNeighborSkinCacheDebugConfig();
+  return cfg.detail_enabled && cfg.detail_start <= cfg.detail_end &&
+         step >= static_cast<rbmd::Id>(cfg.detail_start) &&
+         step <= static_cast<rbmd::Id>(cfg.detail_end);
 }
 
 void EnsureNeighborSkinCacheDebugDirectory() {
@@ -97,24 +110,6 @@ bool BoxGeometryEqual(const Box& lhs, const Box& rhs) {
   }
   return true;
 }
-
-struct DisplacementSq {
-  const rbmd::Real* px;
-  const rbmd::Real* py;
-  const rbmd::Real* pz;
-  const rbmd::Real* ref_px;
-  const rbmd::Real* ref_py;
-  const rbmd::Real* ref_pz;
-  Box box;
-
-  __host__ __device__ rbmd::Real operator()(rbmd::Id idx) const {
-    rbmd::Real dx = px[idx] - ref_px[idx];
-    rbmd::Real dy = py[idx] - ref_py[idx];
-    rbmd::Real dz = pz[idx] - ref_pz[idx];
-    MinImageDistance_while(box, dx, dy, dz);
-    return dx * dx + dy * dy + dz * dz;
-  }
-};
 
 }  // namespace
 
@@ -245,6 +240,13 @@ bool BaseNeighborListBuilder::ShouldReuseNeighborList(
   if (_linked_cell->_total_atoms_num != _cached_total_atoms) {
     invalidate("total_atoms_changed");
   }
+#ifdef USE_MPI
+  // Another builder can rebuild the halo without changing the atom counts.
+  // Its new ghost slots invalidate every cached neighbor index from this one.
+  if (GET_RBMD_PARALLEL->ForwardExchangeEpoch() != _cached_exchange_epoch) {
+    invalidate("exchange_epoch_changed");
+  }
+#endif
   if (std::abs(neighbor_cutoff - _cached_neighbor_cutoff) > EPSILON) {
     invalidate("neighbor_cutoff_changed");
   }
@@ -260,47 +262,136 @@ bool BaseNeighborListBuilder::ShouldReuseNeighborList(
       std::max<rbmd::Id>(0, _linked_cell->_total_atoms_num));
   if (!device_data || _cached_px.size() < active_size ||
       _cached_py.size() < active_size || _cached_pz.size() < active_size ||
-      _cached_atom_ids.size() < total_size ||
+      _cached_atom_ids.size() < active_size ||
       (device_data && device_data->_d_atoms_id.size() < total_size)) {
     invalidate("cache_vector_too_small");
   }
-  if (local_cache_valid &&
-      !thrust::equal(device_data->_d_atoms_id.begin(),
-                     device_data->_d_atoms_id.begin() + total_size,
-                     _cached_atom_ids.begin())) {
-    invalidate("atom_order_changed");
-  }
 
   rbmd::Real max_displacement_sq = rbmd::Real(0);
+  bool local_particle_invalid = false;
   if (local_cache_valid) {
-    max_displacement_sq = thrust::transform_reduce(
-        thrust::device, thrust::make_counting_iterator<rbmd::Id>(0),
-        thrust::make_counting_iterator<rbmd::Id>(active_atoms),
-        DisplacementSq{thrust::raw_pointer_cast(device_data->_d_px.data()),
-                       thrust::raw_pointer_cast(device_data->_d_py.data()),
-                       thrust::raw_pointer_cast(device_data->_d_pz.data()),
-                       thrust::raw_pointer_cast(_cached_px.data()),
-                       thrust::raw_pointer_cast(_cached_py.data()),
-                       thrust::raw_pointer_cast(_cached_pz.data()), force_box},
-        rbmd::Real(0), thrust::maximum<rbmd::Real>());
+    const rbmd::Real zero_status[2] = {rbmd::Real(0), rbmd::Real(0)};
+    CHECK_RUNTIME(MEMCPY(thrust::raw_pointer_cast(_d_cache_status.data()),
+                         zero_status, sizeof(zero_status), H2D));
+    op::CacheCheckOp<device::DEVICE_GPU> cache_check;
+    const bool collect_max_displacement =
+        ShouldWriteNeighborSkinCacheDebug(test_current_step);
+    cache_check(
+        thrust::raw_pointer_cast(device_data->_d_atoms_id.data()),
+        thrust::raw_pointer_cast(_cached_atom_ids.data()),
+        thrust::raw_pointer_cast(device_data->_d_px.data()),
+        thrust::raw_pointer_cast(device_data->_d_py.data()),
+        thrust::raw_pointer_cast(device_data->_d_pz.data()),
+        thrust::raw_pointer_cast(_cached_px.data()),
+        thrust::raw_pointer_cast(_cached_py.data()),
+        thrust::raw_pointer_cast(_cached_pz.data()), force_box, active_atoms,
+        _last_rebuild_threshold_sq, collect_max_displacement,
+        thrust::raw_pointer_cast(_d_cache_status.data()));
+    rbmd::Real local_status[2] = {rbmd::Real(0), rbmd::Real(0)};
+    CHECK_RUNTIME(MEMCPY(local_status,
+                         thrust::raw_pointer_cast(_d_cache_status.data()),
+                         sizeof(local_status), D2H));
+    local_particle_invalid = local_status[0] > rbmd::Real(0);
+    max_displacement_sq = collect_max_displacement
+                              ? local_status[1]
+                              : rbmd::Real(-1);
+  }
+
+  if (local_cache_valid &&
+      ShouldWriteNeighborSkinCacheDetail(test_current_step)) {
+    const auto count = static_cast<std::size_t>(active_atoms);
+    thrust::host_vector<rbmd::Id> atom_ids(
+        device_data->_d_atoms_id.begin(),
+        device_data->_d_atoms_id.begin() + count);
+    thrust::host_vector<rbmd::Id> cached_atom_ids(
+        _cached_atom_ids.begin(), _cached_atom_ids.begin() + count);
+    thrust::host_vector<rbmd::Real> px(
+        device_data->_d_px.begin(), device_data->_d_px.begin() + count);
+    thrust::host_vector<rbmd::Real> py(
+        device_data->_d_py.begin(), device_data->_d_py.begin() + count);
+    thrust::host_vector<rbmd::Real> pz(
+        device_data->_d_pz.begin(), device_data->_d_pz.begin() + count);
+    thrust::host_vector<rbmd::Real> cached_px(
+        _cached_px.begin(), _cached_px.begin() + count);
+    thrust::host_vector<rbmd::Real> cached_py(
+        _cached_py.begin(), _cached_py.begin() + count);
+    thrust::host_vector<rbmd::Real> cached_pz(
+        _cached_pz.begin(), _cached_pz.begin() + count);
+
+    rbmd::Real detail_max_displacement_sq = rbmd::Real(-1);
+    std::size_t max_index = 0;
+    std::size_t order_change_count = 0;
+    std::size_t first_order_change_index =
+        std::numeric_limits<std::size_t>::max();
+    for (std::size_t atom = 0; atom < count; ++atom) {
+      if (atom_ids[atom] != cached_atom_ids[atom]) {
+        ++order_change_count;
+        if (first_order_change_index ==
+            std::numeric_limits<std::size_t>::max()) {
+          first_order_change_index = atom;
+        }
+      }
+      rbmd::Real dx = px[atom] - cached_px[atom];
+      rbmd::Real dy = py[atom] - cached_py[atom];
+      rbmd::Real dz = pz[atom] - cached_pz[atom];
+      MinImageDistance_while(force_box, dx, dy, dz);
+      const rbmd::Real displacement_sq = dx * dx + dy * dy + dz * dz;
+      if (displacement_sq > detail_max_displacement_sq) {
+        detail_max_displacement_sq = displacement_sq;
+        max_index = atom;
+      }
+    }
+
+    const rbmd::Real max_vx = device_data->_d_vx[max_index];
+    const rbmd::Real max_vy = device_data->_d_vy[max_index];
+    const rbmd::Real max_vz = device_data->_d_vz[max_index];
+    const auto first_mismatch =
+        first_order_change_index == std::numeric_limits<std::size_t>::max()
+            ? max_index
+            : first_order_change_index;
+    EnsureNeighborSkinCacheDebugDirectory();
+    const int rank = rbmd::mpi::CurrentRank();
+    const int pid = CurrentProcessId();
+    const std::string filename =
+        "logs/debug/neighbor_skin_detail_rank" + std::to_string(rank) +
+        "_pid" + std::to_string(pid) + ".csv";
+    std::ofstream csv(filename, std::ios::app);
+    if (csv.is_open()) {
+      if (csv.tellp() == 0) {
+        csv << "step,rank,active_atoms,order_change_count,first_mismatch_index,"
+               "first_current_gid,first_cached_gid,max_index,max_current_gid,"
+               "max_cached_gid,max_displacement_sq,current_x,current_y,current_z,"
+               "cached_x,cached_y,cached_z,vx,vy,vz,speed_sq\n";
+      }
+      const rbmd::Real speed_sq =
+          max_vx * max_vx + max_vy * max_vy + max_vz * max_vz;
+      csv << test_current_step << "," << rank << "," << active_atoms << ","
+          << order_change_count << "," << first_mismatch << ","
+          << atom_ids[first_mismatch] << "," << cached_atom_ids[first_mismatch]
+          << "," << max_index << "," << atom_ids[max_index] << ","
+          << cached_atom_ids[max_index] << "," << detail_max_displacement_sq
+          << "," << px[max_index] << "," << py[max_index] << ","
+          << pz[max_index] << "," << cached_px[max_index] << ","
+          << cached_py[max_index] << "," << cached_pz[max_index] << ","
+          << max_vx << "," << max_vy << "," << max_vz << "," << speed_sq
+          << "\n";
+    }
   }
   _last_max_displacement_sq = max_displacement_sq;
 
 #ifdef USE_MPI
-  int local_rebuild =
-      (!local_cache_valid || max_displacement_sq > _last_rebuild_threshold_sq)
-          ? 1
-          : 0;
-  int global_rebuild = 0;
-  rbmd::Real global_max_displacement_sq = rbmd::Real(0);
-  MPI_CHECK(MPI_Allreduce(&local_rebuild, &global_rebuild, 1, MPI_INT, MPI_MAX,
-                          MPI_COMM_WORLD));
-  MPI_CHECK(MPI_Allreduce(&max_displacement_sq, &global_max_displacement_sq, 1,
-                          MPI_RBMD_REAL, MPI_MAX, MPI_COMM_WORLD));
-  _last_max_displacement_sq = global_max_displacement_sq;
-  if (global_rebuild == 0) {
+  rbmd::Real local_status[2] = {
+      (!local_cache_valid || local_particle_invalid)
+          ? rbmd::Real(1)
+          : rbmd::Real(0),
+      std::max(max_displacement_sq, rbmd::Real(0))};
+  rbmd::Real global_status[2] = {rbmd::Real(0), rbmd::Real(0)};
+  MPI_CHECK(MPI_Allreduce(local_status, global_status, 2, MPI_RBMD_REAL,
+                          MPI_MAX, MPI_COMM_WORLD));
+  _last_max_displacement_sq = global_status[1];
+  if (global_status[0] == rbmd::Real(0)) {
 #else
-  if (local_cache_valid && max_displacement_sq <= _last_rebuild_threshold_sq) {
+  if (local_cache_valid && !local_particle_invalid) {
 #endif
     _last_cache_reason = "within_skin";
     ++_neighbor_cache_reuse_count;
@@ -308,7 +399,7 @@ bool BaseNeighborListBuilder::ShouldReuseNeighborList(
     return true;
   }
 
-  if (local_cache_valid && max_displacement_sq > _last_rebuild_threshold_sq) {
+  if (local_cache_valid && local_particle_invalid) {
     _last_cache_reason = "displacement_exceeded";
 #ifdef USE_MPI
   } else if (local_cache_valid) {
@@ -339,29 +430,15 @@ void BaseNeighborListBuilder::RecordNeighborBuildState(
       _cached_px.resize(size);
       _cached_py.resize(size);
       _cached_pz.resize(size);
-      _cached_atom_ids.resize(total_size);
+      _cached_atom_ids.resize(size);
       thrust::copy_n(device_data->_d_px.begin(), active_atoms,
                      _cached_px.begin());
       thrust::copy_n(device_data->_d_py.begin(), active_atoms,
                      _cached_py.begin());
       thrust::copy_n(device_data->_d_pz.begin(), active_atoms,
                      _cached_pz.begin());
-      thrust::copy_n(device_data->_d_atoms_id.begin(), total_atoms,
+      thrust::copy_n(device_data->_d_atoms_id.begin(), active_atoms,
                      _cached_atom_ids.begin());
-
-      // 三阶段计划以稳定 ID 固化排序后的索引。重复 ghost ID 时回退重建，
-      // 避免把同一 ID 的不同周期镜像错误合并。
-      thrust::host_vector<rbmd::Id> host_ids(total_size);
-      thrust::copy(_cached_atom_ids.begin(), _cached_atom_ids.end(),
-                   host_ids.begin());
-      std::unordered_set<rbmd::Id> unique_ids;
-      unique_ids.reserve(total_size);
-      for (const auto id : host_ids) {
-        if (!unique_ids.insert(id).second) {
-          local_ready = false;
-          break;
-        }
-      }
     }
   }
 
@@ -380,6 +457,9 @@ void BaseNeighborListBuilder::RecordNeighborBuildState(
 
   _cached_active_atoms = active_atoms;
   _cached_total_atoms = total_atoms;
+#ifdef USE_MPI
+  _cached_exchange_epoch = GET_RBMD_PARALLEL->ForwardExchangeEpoch();
+#endif
   _cached_neighbor_cutoff = neighbor_cutoff;
   _cached_force_box = GetPeriodicBoxForNeighborAndForce(*_box);
   _cached_force_box_valid = true;

@@ -35,6 +35,14 @@ inline rbmd::Real GetGlobalRealSum(rbmd::Real local_sum) {
   return global_sum;
 }
 
+inline rbmd::Energy GetGlobalEnergySum(rbmd::Energy local_sum) {
+  rbmd::Energy global_sum = local_sum;
+#ifdef USE_MPI
+  MPI_Allreduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  return global_sum;
+}
+
 inline rbmd::Id GetGlobalIdSum(rbmd::Id local_count) {
   rbmd::Id global_count = local_count;
 #ifdef USE_MPI

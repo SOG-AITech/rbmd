@@ -40,6 +40,10 @@ class Ensemble : public Object {
    * @return Determine if there is an error here. If executed normally, return
    * 0. If not, return other values
    */
+  // Force-only evaluation used by fixed-configuration resampling.
+  void EvaluateForces();
+  void InitForForceSampling();
+
   int Run() {
     Presolve();
     Solve();

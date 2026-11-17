@@ -36,6 +36,14 @@ class ConfigData : public Object {
     }
 
     ParseJsonFile(_config_file);
+    const auto fixedp_neighbor=Get<std::string>("type","hyper_parameters","neighbor");
+    if(fixedp_neighbor=="RBL") {
+      const auto fixedp_force=Get<std::string>("type","hyper_parameters","force_field");
+      if(fixedp_force!="CVFF" && fixedp_force!="LJ/CUT/COUL/LONG")
+        throw std::invalid_argument("FIXEDP_UNIFORM_PHYSICAL_SHELL_V3: RBL is supported only for CVFF and LJ/CUT/COUL/LONG; legacy EAM/plain-LJ/Tersoff paths are not formal fixed-p interfaces");
+      if(Get<rbmd::Id>("neighbor_sample_num","hyper_parameters","neighbor")<=0)
+        throw std::invalid_argument("Fixed-p RBL requires p>0; p=0 is not a nonempty-shell estimator");
+    }
   }
 
   ~ConfigData() = default;

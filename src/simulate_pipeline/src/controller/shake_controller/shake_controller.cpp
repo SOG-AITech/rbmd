@@ -29,6 +29,7 @@
 #include "common/timing_statistics.hpp"
 #include "neighbor_list/include/linked_cell/linked_cell_locator.h"
 #include "shake_controller_op.h"
+#include "group_controller_op.h"
 #include "unit_factor.h"
 
 #if defined(_WIN32)
@@ -602,26 +603,7 @@ void RefreshShakeGhostAtomIdToIdxMap(LinkedCell* linked_cell,
     return;
   }
 
-  const rbmd::Id total_atoms = linked_cell->_total_atoms_num;
-  if (total_atoms < 0) {
-    return;
-  }
-
-  thrust::host_vector<rbmd::Id> h_ids(
-      device_data->_d_atoms_id.begin(),
-      device_data->_d_atoms_id.begin() + total_atoms);
-  thrust::host_vector<rbmd::Id> h_atom_id_to_idx(linked_cell->_atom_id_to_idx.size(),
-                                                 rbmd::Id(-1));
-  const std::size_t map_size = h_atom_id_to_idx.size();
-  for (rbmd::Id atom_idx = 0; atom_idx < total_atoms; ++atom_idx) {
-    const rbmd::Id gid = h_ids[static_cast<std::size_t>(atom_idx)];
-    if (gid < 0 || static_cast<std::size_t>(gid) >= map_size) {
-      continue;
-    }
-    h_atom_id_to_idx[static_cast<std::size_t>(gid)] = atom_idx;
-  }
-  thrust::copy(h_atom_id_to_idx.begin(), h_atom_id_to_idx.end(),
-               linked_cell->_atom_id_to_idx.begin());
+  linked_cell->RebuildAtomIndexMap();
 }
 
 void AppendFetchedShakeGhostAtoms(
@@ -2143,10 +2125,10 @@ void ShakeController::RunLegacySerialShakeA() {
   const rbmd::Id num_atoms = *(_structure_info_data->_num_atoms);
   const Box shake_box = GetShakeBoxForMpi(*_box);
   auto atom_id_to_idx =
-      LinkedCellLocator::GetInstance().GetLinkedCell()->_atom_id_to_idx;
+      LinkedCellLocator::GetInstance().GetLinkedCell()->AtomIndexMap();
   op::ShakeAOp<device::DEVICE_GPU>()(
       *(_structure_info_data->_num_angles), _dt, _fmt2v, shake_box,
-      thrust::raw_pointer_cast(atom_id_to_idx.data()),
+      atom_id_to_idx,
       thrust::raw_pointer_cast(_device_data->_d_mass.data()),
       thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
       thrust::raw_pointer_cast(_device_data->_d_angle_id_vec.data()),
@@ -2194,10 +2176,10 @@ void ShakeController::RunLegacySerialShakeB() {
   const rbmd::Id num_atoms = *(_structure_info_data->_num_atoms);
   const Box shake_box = GetShakeBoxForMpi(*_box);
   auto atom_id_to_idx =
-      LinkedCellLocator::GetInstance().GetLinkedCell()->_atom_id_to_idx;
+      LinkedCellLocator::GetInstance().GetLinkedCell()->AtomIndexMap();
   op::ShakeBOp<device::DEVICE_GPU>()(
       *(_structure_info_data->_num_angles), _dt, _fmt2v, shake_box,
-      thrust::raw_pointer_cast(atom_id_to_idx.data()),
+      atom_id_to_idx,
       thrust::raw_pointer_cast(_device_data->_d_mass.data()),
       thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
       thrust::raw_pointer_cast(_device_data->_d_angle_id_vec.data()),
@@ -2626,9 +2608,25 @@ void ShakeController::EmitShakeResidualDebugCsv(const char* stage,
       << worst_geom_raw_r20 << "\n";
 }
 
+void ShakeController::RefreshUnwrappedPositions() {
+  // SHAKE changes positions/images after the normal position-update cache point.
+  op::UnwarpPositionOp<device::DEVICE_GPU>()(
+      *(_structure_info_data->_num_atoms), GetShakeBoxForMpi(*_box),
+      thrust::raw_pointer_cast(_device_data->_d_px.data()),
+      thrust::raw_pointer_cast(_device_data->_d_py.data()),
+      thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+      thrust::raw_pointer_cast(_device_data->_d_flagX.data()),
+      thrust::raw_pointer_cast(_device_data->_d_flagY.data()),
+      thrust::raw_pointer_cast(_device_data->_d_flagZ.data()),
+      thrust::raw_pointer_cast(_device_data->_d_unwarp_px.data()),
+      thrust::raw_pointer_cast(_device_data->_d_unwarp_py.data()),
+      thrust::raw_pointer_cast(_device_data->_d_unwarp_pz.data()));
+}
+
 void ShakeController::ShakeA() {
   if (!UseMpiOwnedShakePath()) {
     RunLegacySerialShakeA();
+    RefreshUnwrappedPositions();
     return;
   }
 
@@ -2658,6 +2656,7 @@ void ShakeController::ShakeA() {
   stage_start = ShakeTimingClock::now();
   ForwardSyncReplicatedShakeState(ShakeCommStage::CorrectedStateForward);
   RecordShakeTiming("SHAKE-A-OutHalo", stage_start);
+  RefreshUnwrappedPositions();
   EmitShakeResidualDebugCsv("post_shake_a", ShakeCommStage::CorrectedStateForward);
 }
 

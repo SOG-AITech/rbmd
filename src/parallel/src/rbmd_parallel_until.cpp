@@ -341,80 +341,15 @@ void RbmdParallelUntil::SetUp() {
 
 void RbmdParallelUntil::ForwardExchangeAtomScalar(
     thrust::device_vector<rbmd::Real>& values) {
-  if (!_linked_cell) {
-    throw std::runtime_error(
-        "Cannot exchange atom scalar without linked cells");
+  if (!_linked_cell || !_domdec ||
+      !_domdec->_neighbour_coneighbour_communication_scheme) {
+    throw std::runtime_error("Cannot exchange atom scalar without domain decomposition");
   }
-
-  const rbmd::Id native_atoms = _linked_cell->_native_atoms_num;
-  const rbmd::Id total_atoms = _linked_cell->_total_atoms_num;
-  if (native_atoms < 0 || total_atoms < native_atoms ||
-      static_cast<std::size_t>(total_atoms) != values.size()) {
-    throw std::runtime_error("Invalid atom counts for scalar forward exchange");
-  }
-  if (total_atoms == native_atoms) {
-    return;
-  }
-  if (native_atoms > INT_MAX) {
-    throw std::runtime_error("Too many native atoms for MPI scalar exchange");
-  }
-
-  auto device_data = DataManager::getInstance().getDeviceData();
-  thrust::host_vector<rbmd::Id> local_ids(native_atoms);
-  thrust::host_vector<rbmd::Real> local_values(native_atoms);
-  thrust::copy_n(device_data->_d_atoms_id.begin(), native_atoms,
-                 local_ids.begin());
-  thrust::copy_n(values.begin(), native_atoms, local_values.begin());
-
-  int rank_count = 0;
-  MPI_CHECK(MPI_Comm_size(_domdec->_mpi_comm, &rank_count));
-  const int local_count = static_cast<int>(native_atoms);
-  std::vector<int> counts(rank_count, 0);
-  MPI_CHECK(MPI_Allgather(&local_count, 1, MPI_INT, counts.data(), 1, MPI_INT,
-                          _domdec->_mpi_comm));
-
-  std::vector<int> displacements(rank_count, 0);
-  int global_count = 0;
-  for (int rank = 0; rank < rank_count; ++rank) {
-    displacements[rank] = global_count;
-    if (counts[rank] < 0 || global_count > INT_MAX - counts[rank]) {
-      throw std::runtime_error("Too many atoms for MPI scalar exchange");
-    }
-    global_count += counts[rank];
-  }
-
-  std::vector<rbmd::Id> global_ids(global_count);
-  std::vector<rbmd::Real> global_values(global_count);
-  MPI_CHECK(MPI_Allgatherv(
-      local_ids.data(), local_count, MPI_RBMD_ID, global_ids.data(),
-      counts.data(), displacements.data(), MPI_RBMD_ID, _domdec->_mpi_comm));
-  MPI_CHECK(MPI_Allgatherv(
-      local_values.data(), local_count, MPI_RBMD_REAL, global_values.data(),
-      counts.data(), displacements.data(), MPI_RBMD_REAL, _domdec->_mpi_comm));
-
-  std::unordered_map<rbmd::Id, rbmd::Real> owner_values;
-  owner_values.reserve(global_ids.size());
-  for (std::size_t i = 0; i < global_ids.size(); ++i) {
-    if (!owner_values.emplace(global_ids[i], global_values[i]).second) {
-      throw std::runtime_error(
-          "Duplicate native atom owner in scalar exchange");
-    }
-  }
-
-  thrust::host_vector<rbmd::Id> ghost_ids(total_atoms - native_atoms);
-  thrust::copy(device_data->_d_atoms_id.begin() + native_atoms,
-               device_data->_d_atoms_id.begin() + total_atoms,
-               ghost_ids.begin());
-  thrust::host_vector<rbmd::Real> ghost_values(ghost_ids.size());
-  for (std::size_t i = 0; i < ghost_ids.size(); ++i) {
-    const auto owner = owner_values.find(ghost_ids[i]);
-    if (owner == owner_values.end()) {
-      throw std::runtime_error("Missing ghost owner in scalar exchange");
-    }
-    ghost_values[i] = owner->second;
-  }
-  thrust::copy(ghost_values.begin(), ghost_values.end(),
-               values.begin() + native_atoms);
+  int size = 1;
+  MPI_CHECK(MPI_Comm_size(_domdec->_mpi_comm, &size));
+  if (size <= 1) return;
+  _domdec->_neighbour_coneighbour_communication_scheme->ForwardGhostScalar(
+      values, _linked_cell.get(), _domdec.get());
 }
 
 bool RbmdParallelUntil::PrepareForwardCoordinateExchange() {
@@ -428,19 +363,8 @@ bool RbmdParallelUntil::PrepareForwardCoordinateExchange() {
   if (comm_size <= 1) {
     return true;
   }
-  const bool local_ready =
-      _domdec->_neighbour_coneighbour_communication_scheme
-          ->PrepareGhostCoordinateExchange(_linked_cell.get());
-  int local = local_ready ? 1 : 0;
-  int global = 0;
-  MPI_CHECK(MPI_Allreduce(&local, &global, 1, MPI_INT, MPI_MIN,
-                          _domdec->_mpi_comm));
-  if (global == 0) {
-    _domdec->_neighbour_coneighbour_communication_scheme
-        ->InvalidateGhostCoordinateExchange();
-    return false;
-  }
-  return true;
+  return _domdec->_neighbour_coneighbour_communication_scheme
+      ->PrepareGhostCoordinateExchange(_linked_cell.get());
 }
 
 void RbmdParallelUntil::ForwardExchangeCoordinates() {
@@ -571,10 +495,16 @@ void RbmdParallelUntil::GetRbeRadomM(
     int _P;
     bool _RBE_random;
     std::mt19937& _gen;
+    Real3 _H;
 
     RbeSampler(rbmd::Real alpha, const Box* box, int P, bool rbe_random,
                std::mt19937& gen)
-        : _alpha(alpha), _box(box), _P(P), _RBE_random(rbe_random), _gen(gen) {}
+        : _alpha(alpha),
+          _box(box),
+          _P(P),
+          _RBE_random(rbe_random),
+          _gen(gen),
+          _H(Compute_H()) {}
 
     rbmd::Real RandomValue(const rbmd::Real& Min, const rbmd::Real& Max) {
       std::uniform_real_distribution<rbmd::Real> dis(Min, Max);
@@ -622,8 +552,7 @@ void RbmdParallelUntil::GetRbeRadomM(
                               const rbmd::Id dimension) const {
       rbmd::Real P_m = EXP(-POW(2 * RBMD_PI * x / _box->_length[dimension], 2) /
                            (4 * _alpha));
-      Real3 H = Compute_H();
-      P_m = P_m / REAL_DATA(H)[dimension];
+      P_m = P_m / REAL_DATA(_H)[dimension];
       return P_m;
     }
 
@@ -721,6 +650,7 @@ void RbmdParallelUntil::GetRbeRadomM(
              (2 * RBMD_PI * RBMD_PI));
 
   sampler.Fetch_P_Sample(0.0, sigma, x, y, z);
+
 }
 
 void RbmdParallelUntil::BalanceAndExchange() {
@@ -734,7 +664,6 @@ void RbmdParallelUntil::BalanceAndExchange() {
   if (comm_size <= 1) {
     return;
   }
-  MPI_Barrier(MPI_COMM_WORLD);
 #endif
   AppendRuntimeOwnerAuditRow("before_exchange", test_current_step, *this,
                              this->_linked_cell.get());

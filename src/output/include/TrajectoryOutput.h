@@ -1,4 +1,5 @@
 #pragma once
+#include "RegularGzipStream.hpp"
 #include <fstream>
 #include <vector>
 #include <string>
@@ -33,7 +34,7 @@ struct TrajectoryFrame {
   rbmd::Real* h_vz{};
   rbmd::Id* h_atoms_type{};
   rbmd::Real* h_charge{};
-  rbmd::Id* h_atom_id_to_idx{};
+  rbmd::Id* h_atoms_id{};
   rbmd::Id timestep{};
   size_t num_atoms{};
   Box box_snapshot;
@@ -73,6 +74,7 @@ public:
   void Execute(rbmd::Id current_timestep) override;
 
 private:
+  std::unique_ptr<Output> _selected_output;
   void OutputWorker();
   void ExecuteMpiRootOnly(rbmd::Id current_timestep);
   void CopyNativeAtomsToHost(size_t local_num_atoms,
@@ -106,10 +108,19 @@ private:
   // Configuration.
   double _memory_usage_ratio;
   rbmd::Id _interval{};
+  rbmd::Id _trajectory_first_step{0};
+  rbmd::Id _trajectory_last_step{0};
+  bool _gzip_output{false};
+  std::uint64_t _trajectory_byte_limit{0};
+  std::unique_ptr<RegularGzipStream> _mpi_compressor;
   size_t _num_atoms{0};
 
   // MPI root-only trajectory output keeps MPI off the background thread.
   bool _mpi_root_only_mode{false};
+  bool _mpi_sharded_mode{false};
+  bool _szz_only{false};
+  rbmd::Id _szz_final_step{0};
+  std::ofstream _szz_file;
   int _mpi_world_size{1};
   TrajectoryGatherBuffer _mpi_local_frame;
   TrajectoryGatherBuffer _mpi_root_frame;

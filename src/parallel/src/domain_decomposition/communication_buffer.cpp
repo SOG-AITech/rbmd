@@ -13,18 +13,23 @@ CommunicationBuffer::CommunicationBuffer() {
   
   // ========== 旧模式：基础 buffer 大小（兼容性保留） ==========
   if ("atomic" == atom_style) {
-    this->_leaving_size = 2 * sizeof(rbmd::Id) + 6 * sizeof(rbmd::Real);
+    this->_leaving_size = 5 * sizeof(rbmd::Id) + 9 * sizeof(rbmd::Real);
     this->_ghost_size = 2 * sizeof(rbmd::Id) + 3 * sizeof(rbmd::Real);
   } else if ("charge" == atom_style) {
-    this->_leaving_size = 2 * sizeof(rbmd::Id) + 7 * sizeof(rbmd::Real);
+    this->_leaving_size = 5 * sizeof(rbmd::Id) + 10 * sizeof(rbmd::Real);
     this->_ghost_size = 2 * sizeof(rbmd::Id) + 4 * sizeof(rbmd::Real);
   } else if ("full" == atom_style) {
-    this->_leaving_size = 3 * sizeof(rbmd::Id) + 7 * sizeof(rbmd::Real);
+    this->_leaving_size = 6 * sizeof(rbmd::Id) + 10 * sizeof(rbmd::Real);
     this->_ghost_size = 2 * sizeof(rbmd::Id) + 4 * sizeof(rbmd::Real);
   } else {
     throw std::runtime_error("Error atoms style");
   }
   
+  // Keep the Real segment aligned when Real is double and Id is 32-bit.
+  if (atom_style != "full" && sizeof(rbmd::Real) > sizeof(rbmd::Id)) {
+    _leaving_size += sizeof(rbmd::Id);
+  }
+
   // 只有 full atom_style 需要 topology exchange；charge/atomic 保持 ref 的旧 SoA 布局。
   if ("full" == atom_style) {
     auto& device_data = DataManager::getInstance().getDeviceData();
@@ -41,7 +46,7 @@ CommunicationBuffer::CommunicationBuffer() {
 }
 
 void CommunicationBuffer::ResizeLeaving(unsigned int leaving_size) {
-  // 旧模式：id  type molecular_id px py pz vx vy vz  charge
+  // SoA: id type [molecule] image[3] position[3] velocity[3] [charge] unwrapped[3]
   this->_leaving_atoms.resize(this->_leaving_size * leaving_size);
 }
 

@@ -1,6 +1,6 @@
 # RBMD JSON Configuration Reference
 
-[中文](json-configuration.zh_CN.md) · [Build and Run Guide](build.en.md)
+[中文](json-configuration.md) · [Build and Run Guide](build.md)
 
 This document describes the JSON keys read by the current code. JSON is parsed with `nlohmann::ordered_json` and comments are allowed. Relative paths are generally resolved from the directory that contains the JSON file.
 
@@ -67,7 +67,8 @@ Notes:
 Constraints:
 
 - Only orthogonal boxes are supported for replication. A triclinic box with `xy`/`xz`/`yz` tilt raises an error.
-- For `atom_style full` or data with molecular topology, every atom in the `Atoms` section must include image flags `ix iy iz`.
+- Default `replicate_bond_periodic=true` maps topology to replica tiles using minimum-image bond vectors in the seed box, ignoring image flags (omitted or zero flags are allowed). Bond components must be unambiguous under the minimum-image convention, normally shorter than half the box. Dihedrals accumulate tile shifts along the 1–2–3–4 chain.
+- Explicit `replicate_bond_periodic=false` retains image-based molecular unwrapping and requires consistent `ix iy iz` on every molecular atom; zero flags on a boundary-crossing molecule are unsuitable for this mode.
 - `atom_style full` only means that the data file includes molecule ID, charge, and topology fields. Whether bonded terms or special-bond scaling are calculated is still determined by the force kernel for `force_field.type`.
 
 ## `hyper_parameters`
@@ -80,6 +81,7 @@ Constraints:
 | `bond_type` | string | CVFF-related | `"harmonic"` | CVFF bond potential type. |
 | `angle_type` | string | CVFF-related | `"harmonic"` | CVFF angle potential type. |
 | `dihedral_type` | string | CVFF-related | `"harmonic"`, `"opls"` | CVFF dihedral type; used when reading data and scheduling CVFF parameters. |
+| `mixing_rule` | string | CVFF | `"geometric"`, `"arithmetic"` | LJ sigma mixing: defaults to geometric for `dihedral_type: "opls"`, arithmetic otherwise. Epsilon always uses geometric mixing. |
 | `improper_type` | string | Optional for CVFF | `"harmonic"`, `"cvff"` | Improper type; read when improper data exist. |
 | `potential_file` | string | EAM/Tersoff-related | `"Cu.eam.alloy"` | Potential-file path. EAM and Tersoff resolve it relative to the JSON directory. |
 | `potential_elements` | string | Tersoff-related | `"Si"` | Tersoff element mapping string. |
@@ -145,15 +147,20 @@ The complete `hyper_parameters.coulomb` object may be omitted. Omitting it disab
 | --- | --- | --- | --- | --- |
 | `type` | string | Required when `coulomb` is present | `"RBE"`, `"RBSOG"`, `"EWALD"` | Coulomb algorithm type. |
 | `accuracy` | number | Required for automatic RBE/EWALD alpha | `1.0e-4` | Relative accuracy used to derive alpha automatically. |
-| `alpha` | number | Optional for RBE/EWALD | `0.04333893` | Manual alpha. When present, it takes precedence over `accuracy`. |
+| `debug_alpha` | boolean | Optional for RBE/EWALD, default `false` | `true` | Enable manual alpha for debugging only; requires `alpha`. |
+| `alpha` | number | Only with `debug_alpha=true` | `0.04333893` | Finite positive manual override of `accuracy`. Providing it without the debug flag is an error; remove it to use automatic derivation. |
 | `kmax` | array<int, 3> | Optional for RBE energy or EWALD | `[18, 34, 22]` | Manually specified k-space range; must contain exactly three integers. |
 | `coulomb_sample_num` | integer | Required for RBE/RBSOG | `2000` | RBE/RBSOG sample count. |
+| `rbe_low_modes` | boolean | Optional | `false` | Enable deterministic low modes for RBE; defaults to false. |
+| `K_max` | number | Required when enabled | `1.0` | Physical spherical cutoff: all nonzero modes with `|k| <= K_max` are exact; units are inverse length. Distinct from integer `kmax`. |
 | `energy_rbe_flag` | string | Required for RBE | `"yes"`, `"no"` | Must be defined for RBE. With `"yes"`, k-space energy parameters are prepared. |
 | `rbsog_level` | integer | Required for RBSOG | `0` to `4` | RBSOG preset level; only `[0, 4]` is accepted. |
 
+With `rbe_low_modes=true`, `coulomb_sample_num` is the number of independent random draws **outside** the sphere; deterministic modes are additional work. `K_max=0` uses the new independent full-box sampler without deterministic modes. With the switch off, the MH sampler also uses the full box. Force, energy and virial share the split weights. Replicated inputs retain their expanded geometry, while all RBE paths (MPI and non-MPI) use the full simulation box for sampling and normalization S, without restricting wavevectors by replication factors. See [the sampling/variance experiment](rbe-low-modes.zh_CN.md) for numerical support, limits and reproducible checks.
+
 RBSOG notes:
 
-- RBSOG no longer accepts the legacy keys `alpha`, `accuracy`, `rbsog_b`, `rbsog_sigma`, `rbsog_Mmax`, and `rbsog_Kcut`.
+- RBSOG does not accept `debug_alpha` or the legacy keys `alpha`, `accuracy`, `rbsog_b`, `rbsog_sigma`, `rbsog_Mmax`, and `rbsog_Kcut`.
 - RBSOG accepts only `rbsog_level`; the code derives its internal parameters from this level.
 - A higher `rbsog_level` has a lower target error and higher accuracy, but incurs more computation. Use `4` for the highest accuracy.
 
@@ -426,3 +433,34 @@ Delete the complete `outputs.rdf_out` object:
   "thermo_out": { "interval": 100 }
 }
 ```
+
+## OPLS LJ mixing and special bonds
+
+The molecular dispatcher uses `force_field.type: "CVFF"` for OPLS as well.
+Set the following fields under `hyper_parameters` (merge with the other required
+force-field, neighbor and Coulomb settings):
+
+```json
+{
+  "force_field": {
+    "type": "CVFF",
+    "dihedral_type": "opls",
+    "mixing_rule": "geometric"
+  },
+  "extend": {
+    "special_bonds": [0, 0, 0.5]
+  }
+}
+```
+
+OPLS uses `sigma_ij = sqrt(sigma_i * sigma_j)` and
+`epsilon_ij = sqrt(epsilon_i * epsilon_j)`. This rule applies to the Verlet/RBL
+pair tables, RBL energy/virial evaluation and Verlet-SOG force/energy evaluation.
+An explicit `mixing_rule` overrides the dihedral-based default; use `geometric`
+for OPLS systems without dihedrals too. Invalid rules are rejected.
+
+`special_bonds` is independent of mixing: the three entries scale 1–2, 1–3 and
+1–4 LJ/Coulomb interactions. Existing explicit values are retained, so change
+`[0, 0, 0]` to `[0, 0, 0.5]` in OPLS inputs. Selecting geometric mixing does not
+change those weights. LAMMPS equivalents are `pair_modify mix geometric` and
+`special_bonds lj/coul 0.0 0.0 0.5`.

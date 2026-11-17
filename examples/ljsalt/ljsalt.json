@@ -2,7 +2,7 @@
   "init_configuration": {
 
     "read_data": {
-      "file": "../../benchmark/data/lj_salt.data",
+      "file": "lj_salt_20w_v.data",
       "unit": "LJ", 
       "atom_style": "charge",  
       "velocity_type": "GAUSS",
@@ -13,7 +13,7 @@
 
   "hyper_parameters": {
     "force_field": {
-      "type": "LJ/CUT/COUL/LONG"
+      "type": "LJ/CUT/COUL/LONG"   // 测试
     },
 
     "neighbor": {
@@ -28,7 +28,6 @@
       "type": "RBE", 
       "coulomb_sample_num": 100,
       "accuracy": 1.0e-4,
-      "alpha": 0.03,
       "kmax": [ 2 ,2 ,2],
       "energy_rbe_flag":  "yes"   
     },

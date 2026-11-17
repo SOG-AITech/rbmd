@@ -369,13 +369,19 @@ void DomainDecomposition::HandleDomainLeavingAtoms(
       mod_pos = thrust::raw_pointer_cast(_device_data->_d_py.data());
     if (dim == 2)
       mod_pos = thrust::raw_pointer_cast(_device_data->_d_pz.data());
+    auto& images = dim == 0 ? _device_data->_d_flagX :
+                   dim == 1 ? _device_data->_d_flagY : _device_data->_d_flagZ;
+    auto& unwrapped = dim == 0 ? _device_data->_d_unwarp_px :
+                      dim == 1 ? _device_data->_d_unwarp_py : _device_data->_d_unwarp_pz;
     op::HandleDomainLeavingAtomsOneDimOp<device::DEVICE_GPU>
         handle_domain_leaving_atoms_one_dim_op;
     handle_domain_leaving_atoms_one_dim_op(
         d_start_region, d_end_region,
         thrust::raw_pointer_cast(_device_data->_d_px.data()),
         thrust::raw_pointer_cast(_device_data->_d_py.data()),
-        thrust::raw_pointer_cast(_device_data->_d_pz.data()), mod_pos, *h_box,
+        thrust::raw_pointer_cast(_device_data->_d_pz.data()), mod_pos,
+        thrust::raw_pointer_cast(images.data()),
+        thrust::raw_pointer_cast(unwrapped.data()), *h_box,
         dim, shift, linked_cell->_native_atoms_num);
   }
   CHECK_RUNTIME(FREE(d_start_region));

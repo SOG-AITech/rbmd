@@ -1,3 +1,4 @@
+#include "common/revision_diagnostics.h"
 #include "berendsen_controller.h"
 
 #include <thrust/device_ptr.h>
@@ -85,7 +86,9 @@ void BerendsenController::Init() {
 void BerendsenController::Update() {
   //ComputeTemp();
 
+  rbmd::revision::ThermostatWork revision_work;
   UpdataVelocity();
+  revision_work.Finish();
 }
 
 void BerendsenController::ComputeTemperature() {

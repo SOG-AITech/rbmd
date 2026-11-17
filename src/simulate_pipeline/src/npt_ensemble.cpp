@@ -78,7 +78,7 @@ void NPTensemble::Init() {
   _velocity_controller->Init();
 
   _force_controller->Init();
-  _force_controller->Execute();
+  EvaluateForces();
   _shake_controller->Init();
 
   //
@@ -120,7 +120,7 @@ void NPTensemble::Solve() {
         _NoseHoover_controller->EmitShakeTempDebugCsv("post_shake_a");
       }
 
-      _force_controller->Execute();
+      EvaluateForces();
 
       if (true == use_shake)
       {
@@ -150,7 +150,7 @@ void NPTensemble::Solve() {
         _shake_controller->ShakeA();
       }
 
-      _force_controller->Execute();       //
+      EvaluateForces();       //
 
       _velocity_controller->Update();       //
 
@@ -168,7 +168,7 @@ void NPTensemble::Solve() {
   }
   else if ("bm" ==_integration_type) {
     _position_controller->Updatebm();
-    _force_controller->Execute();
+    EvaluateForces();
     _velocity_controller->Updatebm();
 
     _temperature_controller->ComputeTemperature();

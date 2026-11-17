@@ -1,5 +1,8 @@
 #pragma once
-#include "../../common/types.h"
+#include <array>
+#include <thrust/device_vector.h>
+
+#include "../../common/types.h"
 #include "force.h"
 #include "kspace_calculator.h"
 #include "model/box.h"
@@ -50,6 +53,9 @@ private:
   rbmd::Real _corr_value_x = 0.0;
   rbmd::Real _corr_value_y = 0.0;
   rbmd::Real _corr_value_z = 0.0;
+
+  thrust::device_vector<rbmd::Real> _d_rbl_force_sum;
+  std::array<rbmd::Real, 3> _h_rbl_force_sum{};
 
   //kspace
   rbmd::Real _qqr2e;

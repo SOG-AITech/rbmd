@@ -9,7 +9,7 @@
 struct ThermoFrame {
   rbmd::Id step = 0;
   std::vector<std::string> ordered_keys;
-  std::unordered_map<std::string, rbmd::Real> values;
+  std::unordered_map<std::string, double> values;
   std::unordered_map<std::string, std::string> labels;
 };
 

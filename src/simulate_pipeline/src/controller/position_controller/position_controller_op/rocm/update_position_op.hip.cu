@@ -66,7 +66,7 @@ __global__ void UpdatePosition(const rbmd::Id num_atoms, const rbmd::Real dt, Bo
     py[tid] = sum_py;
     pz[tid] = sum_pz;
 
-    ApplyPBC_unflag(box, px[tid], py[tid], pz[tid]);
+    // SHAKE applies PBC with image counters after correcting this prediction.
   }
 }
 

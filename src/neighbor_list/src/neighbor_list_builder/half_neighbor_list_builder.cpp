@@ -40,8 +40,10 @@ HalfNeighborListBuilder::HalfNeighborListBuilder() {
       _linked_cell->_neighbor_cutoff * _linked_cell->_neighbor_cutoff - EPSILON;
 }
 void HalfNeighborListBuilder::ComputeNeighborCells() {
-  _linked_cell->_neighbor_cell.resize(
-      (_linked_cell->_total_cells * this->_neighbor_cell_num));
+  const std::size_t storage_size =
+      static_cast<std::size_t>(_linked_cell->_total_cells) *
+      static_cast<std::size_t>(this->_neighbor_cell_num);
+  _linked_cell->_neighbor_cell.resize(storage_size);
   op::ComputeHalfNeighborsOp<device::DEVICE_GPU> compute_half_neighbors_op;
   compute_half_neighbors_op(
       _linked_cell->GetDataPtr()->_d_per_dimension_cells,

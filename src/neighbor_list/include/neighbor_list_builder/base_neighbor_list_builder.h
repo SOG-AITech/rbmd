@@ -2,6 +2,7 @@
 #include <thrust/device_vector.h>
 
 #include <string>
+#include <cstdint>
 
 #include "../../data_manager/include/model/box.h"
 #include "../common/object.h"
@@ -58,6 +59,7 @@ class BaseNeighborListBuilder : public Object {
   bool _has_neighbor_cache = false;
   rbmd::Id _cached_active_atoms = 0;
   rbmd::Id _cached_total_atoms = 0;
+  std::uint32_t _cached_exchange_epoch = 0;
   rbmd::Real _cached_neighbor_cutoff = 0;
   Box _cached_force_box{};
   bool _cached_force_box_valid = false;
@@ -70,4 +72,6 @@ class BaseNeighborListBuilder : public Object {
   thrust::device_vector<rbmd::Real> _cached_py{};
   thrust::device_vector<rbmd::Real> _cached_pz{};
   thrust::device_vector<rbmd::Id> _cached_atom_ids{};
+  thrust::device_vector<rbmd::Real> _d_cache_status =
+      thrust::device_vector<rbmd::Real>(2);
 };

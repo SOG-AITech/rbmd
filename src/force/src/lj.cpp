@@ -1,3 +1,4 @@
+#include "common/revision_timing.h"
 #include "lj.h"
 #include "force_box_selector.h"
 
@@ -80,7 +81,9 @@ void LJ::ComputeLJRBL()
     TimingStatistics::Instance().record("Neighbor-List",duration.count());
 
     // compute force
-    auto start_rbl_force = std::chrono::high_resolution_clock::now();
+    rbmd::revision::WorkflowTimer revision_pair_wall("Pair-Workflow-Wall");
+  rbmd::revision::DeviceSynchronize();
+  auto start_rbl_force = std::chrono::high_resolution_clock::now();
     const auto r_core =
         DataManager::getInstance().getConfigData()->Get<rbmd::Real>(
             "r_core", "hyper_parameters", "neighbor");
@@ -91,6 +94,7 @@ void LJ::ComputeLJRBL()
 
     auto num_atoms = *(_structure_info_data->_num_atoms);
     const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
+    rbmd::revision::GpuTimer revision_pair("Pair-KernelGPU", nullptr);
     op::LJRBLForceOp<device::DEVICE_GPU>()(
         force_box, r_core, _cut_off,
         num_atoms,neighbor_sample_num,_rbl_list->_selection_frequency,
@@ -108,6 +112,7 @@ void LJ::ComputeLJRBL()
         thrust::raw_pointer_cast(_device_data->_d_fx.data()),
         thrust::raw_pointer_cast(_device_data->_d_fy.data()),
         thrust::raw_pointer_cast(_device_data->_d_fz.data()));
+    revision_pair.Stop();
 
     const auto linked_cell = LinkedCellLocator::GetInstance().GetLinkedCell();
     const rbmd::Id logical_total = linked_cell
@@ -135,11 +140,15 @@ void LJ::ComputeLJRBL()
     _corr_value_z = GetGlobalRealSum(local_sum_z) / global_num_atoms;
 
     // fix RBL:   rbl_force = force - corr_value
+    rbmd::revision::GpuTimer revision_correction("RBL-CorrectionGPU", nullptr);
     op::FixRBLForceOp<device::DEVICE_GPU>()(
                         num_atoms, _corr_value_x, _corr_value_y, _corr_value_z,
                         thrust::raw_pointer_cast(_device_data->_d_fx.data()),
                         thrust::raw_pointer_cast(_device_data->_d_fy.data()),
                         thrust::raw_pointer_cast(_device_data->_d_fz.data()));
+    revision_correction.Stop();
+
+  rbmd::revision::DeviceSynchronize();
 
   auto end_rbl_force = std::chrono::high_resolution_clock::now();
   std::chrono::duration<rbmd::Real> duration_rbl_force = end_rbl_force - start_rbl_force;
@@ -167,11 +176,14 @@ void LJ::ComputeLJVerlet()
   std::chrono::duration<rbmd::Real> duration = end - start;
   TimingStatistics::Instance().record("Neighbor-List",duration.count());
   //
+  rbmd::revision::WorkflowTimer revision_pair_wall("Pair-Workflow-Wall");
+  rbmd::revision::DeviceSynchronize();
   auto start_verlet_force = std::chrono::high_resolution_clock::now();
   thrust::device_vector<rbmd::Real> d_total_evdwl(1, 0.0);
   auto num_atoms = *(_structure_info_data->_num_atoms);
   const Box force_box = GetPeriodicBoxForNeighborAndForce(*_box);
   // compute LJ
+  rbmd::revision::GpuTimer revision_pair("Pair-KernelGPU", nullptr);
   op::LJForceOp<device::DEVICE_GPU>()(
               force_box, _cut_off,num_atoms,
               thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
@@ -188,6 +200,9 @@ void LJ::ComputeLJVerlet()
               thrust::raw_pointer_cast(_device_data->_d_fz.data()),
               thrust::raw_pointer_cast(_device_data->_d_flat_virial.data()),
               thrust::raw_pointer_cast(d_total_evdwl.data()));
+  revision_pair.Stop();
+
+  rbmd::revision::DeviceSynchronize();
 
   auto end_verlet_force = std::chrono::high_resolution_clock::now();
   std::chrono::duration<rbmd::Real> duration_verlet_force = end_verlet_force - start_verlet_force;

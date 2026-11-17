@@ -1,4 +1,5 @@
 #pragma once
+#include "common/atom_index_map.h"
 #include "../../common/device_types.h"
 #include "../../common/types.h"
 #include "../../data_manager/include/model/box.h"
@@ -11,7 +12,7 @@ namespace op
     void operator()(Box box, TersoffParams* params,ShiftFlag shift,
       const rbmd::Real cutmax,
     const rbmd::Id num_atoms,const rbmd::Id nelements,
-    const rbmd::Id* atom_id_to_idx,
+    rbmd::AtomIndexMapView atom_id_to_idx,
     const rbmd::Id* atoms_id, const rbmd::Id* atoms_type,const rbmd::Id* map,
     const rbmd::Id* elem3param,
     const rbmd::Id* start_id, const rbmd::Id* end_id,
@@ -26,7 +27,7 @@ namespace op
     void operator()(Box box, TersoffParams* params,ShiftFlag shift,
       const rbmd::Real cutmax,
     const rbmd::Id num_atoms,const rbmd::Id nelements,
-    const rbmd::Id* atom_id_to_idx,
+    rbmd::AtomIndexMapView atom_id_to_idx,
     const rbmd::Id* atoms_id, const rbmd::Id* atoms_type,const rbmd::Id* map,
     const rbmd::Id* elem3param,
     const rbmd::Id* start_id, const rbmd::Id* end_id,
@@ -43,7 +44,7 @@ namespace op
     void operator()( Box box, TersoffParams* params,ShiftFlag shift,
       const rbmd::Real cutmax,
     const rbmd::Id num_atoms, const rbmd::Id nelements,
-    const rbmd::Id* atom_id_to_idx,
+    rbmd::AtomIndexMapView atom_id_to_idx,
     const rbmd::Id* atoms_id, const rbmd::Id* atoms_type,const rbmd::Id* map,
     const rbmd::Id* elem3param,
     const rbmd::Id* start_id, const rbmd::Id* end_id,
@@ -58,7 +59,7 @@ namespace op
     void operator()(Box box, TersoffParams* params,ShiftFlag shift,
       const rbmd::Real cutmax,
     const rbmd::Id num_atoms,const rbmd::Id nelements,
-    const rbmd::Id* atom_id_to_idx,
+    rbmd::AtomIndexMapView atom_id_to_idx,
     const rbmd::Id* atoms_id, const rbmd::Id* atoms_type,const rbmd::Id* map,
     const rbmd::Id* elem3param,
     const rbmd::Id* start_id, const rbmd::Id* end_id,

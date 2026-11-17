@@ -101,6 +101,8 @@ pkg_check_modules(FTXUI REQUIRED ftxui IMPORTED_TARGET GLOBAL)
 
 
 add_executable(${PROJECT_NAME} ${src})
+find_package(ZLIB REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE ZLIB::ZLIB)
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E make_directory

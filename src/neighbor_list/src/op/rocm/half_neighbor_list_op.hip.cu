@@ -1,9 +1,11 @@
 #include "common/device_types.h"
+#include "common/atomic_count.h"
 #include "common/rbmd_define.h"
 #include "common/types.h"
 #include "half_neighbor_list_op.h"
 #include "model/box.h"
 #include "src/op/full_neighbor_list_op.h"
+#include <cstdint>
 
 namespace op {
 __global__ void ComputeHalfNeighbors(rbmd::Id* per_dimension_cells,
@@ -12,6 +14,9 @@ __global__ void ComputeHalfNeighbors(rbmd::Id* per_dimension_cells,
                                      rbmd::Id cell_count_within_cutoff) {
   const unsigned int cell_idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (cell_idx < total_cell) {
+    const std::uint64_t neighbor_cell_row =
+        static_cast<std::uint64_t>(cell_idx) *
+        static_cast<std::uint64_t>(neighbor_num);
     rbmd::Id idx_z =
         cell_idx / (per_dimension_cells[0] * per_dimension_cells[1]);
     rbmd::Id idx_y =
@@ -43,7 +48,8 @@ __global__ void ComputeHalfNeighbors(rbmd::Id* per_dimension_cells,
                     per_dimension_cells[0] +
                 neighbor_x;
 
-            neighbor_cell[cell_idx * neighbor_num + neighbor_count] =
+            neighbor_cell[neighbor_cell_row +
+                          static_cast<std::uint64_t>(neighbor_count)] =
                 neighbour_cell_idx;
             ++neighbor_count;
           }
@@ -71,6 +77,9 @@ __global__ void EstimateHalfNeighborListNoWarp(
     rbmd::Real distance = 0;
     rbmd::Id atom_neighbor_num = 0;
     const rbmd::Id cell_idx = __ldg(&per_atom_cell_id[atom_idx]);
+    const std::uint64_t neighbor_cell_row =
+        static_cast<std::uint64_t>(cell_idx) *
+        static_cast<std::uint64_t>(neighbor_cell_num);
     if (threadIdx.x < BLOCK_SIZE) {
       shared_px[threadIdx.x] = __ldg(&px[atom_idx]);
       shared_py[threadIdx.x] = __ldg(&py[atom_idx]);
@@ -78,8 +87,8 @@ __global__ void EstimateHalfNeighborListNoWarp(
     }
     __syncthreads();
     for (int i = 0; i < neighbor_cell_num; ++i) {
-      const rbmd::Id neighbour_cell_idx =
-          __ldg(&neighbor_cell[cell_idx * neighbor_cell_num + i]);
+      const rbmd::Id neighbour_cell_idx = __ldg(
+          &neighbor_cell[neighbor_cell_row + static_cast<std::uint64_t>(i)]);
       const rbmd::Id start = __ldg(&in_atom_list_start_index[neighbour_cell_idx]);
       const rbmd::Id end = __ldg(&in_atom_list_end_index[neighbour_cell_idx]);
       for (rbmd::Id neighbor_atom_idx = start; neighbor_atom_idx < end;
@@ -133,6 +142,9 @@ __global__ void GenerateHalfNeighborListNoWarp(
     rbmd::Id total_neighbor_num = 0;
     // 当前所属的cell
     rbmd::Id cell_idx = __ldg(&per_atom_cell_id[atom_idx]);
+    const std::uint64_t neighbor_cell_row =
+        static_cast<std::uint64_t>(cell_idx) *
+        static_cast<std::uint64_t>(neighbor_cell_num);
     if (threadIdx.x < BLOCK_SIZE) {
       shared_px[threadIdx.x] = __ldg(&px[atom_idx]);
       shared_py[threadIdx.x] = __ldg(&py[atom_idx]);
@@ -141,8 +153,8 @@ __global__ void GenerateHalfNeighborListNoWarp(
     __syncthreads();
     // 遍历当前原子的所有邻居cell
     for (int i = 0; i < neighbor_cell_num; ++i) {
-      rbmd::Id neighbour_cell_idx =
-            __ldg(&neighbor_cell[cell_idx * neighbor_cell_num + i]);
+      rbmd::Id neighbour_cell_idx = __ldg(
+          &neighbor_cell[neighbor_cell_row + static_cast<std::uint64_t>(i)]);
       rbmd::Id start = __ldg(&in_atom_list_start_index[neighbour_cell_idx]);
       rbmd::Id end = __ldg(&in_atom_list_end_index[neighbour_cell_idx]);
       for (rbmd::Id neighbor_atom_idx = start; neighbor_atom_idx < end;
@@ -165,7 +177,7 @@ __global__ void GenerateHalfNeighborListNoWarp(
               neighbors[neighbor_num] = neighbor_atom_idx;
               ++neighbor_num;
             } else {
-              atomicOr(should_realloc, RBMD_TRUE);
+              rbmd::AtomicOrCount(should_realloc, RBMD_TRUE);
             }
             ++total_neighbor_num;
           }
@@ -175,7 +187,7 @@ __global__ void GenerateHalfNeighborListNoWarp(
     neighbor_end[atom_idx] = neighbor_num;
     rbmd::Id my_total_neighbor_num = total_neighbor_num;
     if (my_total_neighbor_num > max_neighbor_num[atom_idx]) {
-      atomicOr(should_realloc, RBMD_TRUE);
+      rbmd::AtomicOrCount(should_realloc, RBMD_TRUE);
     }
   }
 }

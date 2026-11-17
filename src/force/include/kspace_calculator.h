@@ -2,19 +2,25 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
-#include <array>
 #include <memory>
 #include <random>
 #include <string>
+#include <vector>
 
+#ifdef USE_MPI
+#include <mpi.h>
+#endif
+
+#include "../../common/rbmd_define.h"
 #include "../../common/types.h"
 #include "force.h"
+#include "common/rbe_low_modes.h"
 
 class KSpaceCalculator : public Force{
 public:
   KSpaceCalculator();
 
-  virtual ~KSpaceCalculator() = default;
+  ~KSpaceCalculator() override;
 
   void Init() override;
   void Execute() override;
@@ -23,6 +29,16 @@ public:
   rbmd::Real GetKspacEnergy() const { return _e_kspace; }
   rbmd::Real GetAlpha() const { return _alpha; }
   rbmd::Real GetGEwald() const { return static_cast<rbmd::Real>(_g_ewald); }
+  bool SupportsRbeOverlap() const { return _coulomb_type == "RBE"; }
+
+  // RBE is split at its only host-side dependency: the global structure-factor
+  // reduction. BeginRbeForce enqueues local rho work and D2H copies. After an
+  // event recorded on that stream completes, the caller starts the collective;
+  // FinishRbeForce waits for it and enqueues the force work.
+  void BeginRbeForce(STREAM_T stream);
+  void StartRbeReduction();
+  void FinishRbeForce(STREAM_T stream);
+  void FinalizeRbeForce();
 
 private:
   void SetAlphaFromManual(rbmd::Real alpha);
@@ -45,6 +61,9 @@ private:
   //RBE
   void RBEInit(Box box,rbmd::Real alpha,rbmd::Id RBE_P,
                bool use_random = true);
+  void PrepareRbeLowModes(const Box& box);
+  void InitializeRbeAsyncResources();
+  void ReleaseRbeAsyncResources();
   void ComputeChargeStructureFactorRBE_opt(
      Box box,
      rbmd::Id num_atoms,
@@ -53,10 +72,11 @@ private:
      rbmd::Id RBE_P,
      rbmd::Real qqr2e,
      thrust::device_vector<rbmd::Real>& rhok_real_redue,
-     thrust::device_vector<rbmd::Real>& rhok_image_redue);
+     thrust::device_vector<rbmd::Real>& rhok_image_redue,
+     STREAM_T stream = nullptr);
 
   void ComputeRBE();
-  void ComputeRBEVirial(rbmd::Real rbe_sum_gauss);
+  void ComputeRBEVirial(rbmd::Real rbe_sum_gauss, STREAM_T stream = nullptr);
 
   void ComputeSelfEnergy(rbmd::Real alpha,rbmd::Real qqr2e,rbmd::Real& ave_self_energy);  //self  Energy
   void ComputeKspaceEnergyLegacy(
@@ -119,6 +139,12 @@ private:
 
   //RBE
   rbmd::Id _RBE_P;
+  bool _rbe_low_modes_enabled = false;
+  double _rbe_K_max = 0;
+  rbmd::Id _rbe_tail_samples = 0;
+  rbmd::RbeLowModes _rbe_low_modes;
+  std::mt19937 _rbe_low_generator;
+  thrust::device_vector<rbmd::Real> _rbe_mode_weights;
   std::string  _energy_rbe_flag = "yes"; //default
   rbmd::Real _qqr2e;
   rbmd::Id _num_k;
@@ -128,6 +154,30 @@ private:
   //
   thrust::device_vector<rbmd::Real> _rhok_real_redue;
   thrust::device_vector<rbmd::Real> _rhok_image_redue;
+  thrust::device_vector<rbmd::Real> _d_rbe_energy;
+  std::vector<rbmd::Real> _h_rbe_sample_x;
+  std::vector<rbmd::Real> _h_rbe_sample_y;
+  std::vector<rbmd::Real> _h_rbe_sample_z;
+  rbmd::Real* _h_rbe_samples = nullptr;
+  rbmd::Real* _h_rbe_rho = nullptr;
+  rbmd::Real* _h_rbe_energy = nullptr;
+  STREAM_T _rbe_stream{};
+  EVENT_T _rbe_rho_begin_event{};
+  EVENT_T _rbe_rho_done_event{};
+  EVENT_T _rbe_force_begin_event{};
+  EVENT_T _rbe_force_done_event{};
+  bool _rbe_async_resources_ready = false;
+  enum class RbeAsyncPhase {
+    Idle,
+    RhoQueued,
+    ReductionInFlight,
+    ForceQueued
+  };
+  RbeAsyncPhase _rbe_async_phase = RbeAsyncPhase::Idle;
+#ifdef USE_MPI
+  MPI_Request _rbe_reduce_request = MPI_REQUEST_NULL;
+#endif
+  rbmd::Real _rbe_sum_gauss = 0;
   //
   rbmd::Real _e_kspace = 0;
   rbmd::Real _e_self_energy = 0;

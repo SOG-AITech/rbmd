@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <array>
 #include <unordered_map>
 #include <vector>
 #include "core/parsed_snapshot.h"
@@ -20,6 +21,7 @@ struct StreamCtx {
   int size = 1;
   bool is_root = false;
   bool active = false;
+  bool generated_locally = false;
   std::unordered_map<rbmd::Id, std::size_t> local_index;
 #ifdef READER_ENABLE_MPI
   struct Impl;
@@ -32,7 +34,10 @@ int Rank();
 int Size();
 void DistributeSnapshot(ParsedSnapshot& snapshot);
 
-StreamCtx BeginStreaming(ParsedSnapshot& snapshot, rbmd::Id expected_atoms);
+StreamCtx BeginStreaming(ParsedSnapshot& snapshot, rbmd::Id expected_atoms,
+                         const ParsedSnapshot* replicated_seed = nullptr,
+                         std::array<std::size_t, 3> factors = {1, 1, 1},
+                         bool bond_periodic = false);
 void ReceiveLoop(StreamCtx& ctx);
 void EndStreaming(StreamCtx& ctx);
 void StreamAtom(StreamCtx& ctx, const ParsedSnapshot::Atom& atom);

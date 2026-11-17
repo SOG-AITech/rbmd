@@ -26,6 +26,8 @@
 #include <thrust/gather.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/sequence.h>
+#include <thrust/scatter.h>
+#include <thrust/sort.h>
 #include <thrust/transform.h>
 #include <thrust/iterator/transform_iterator.h>
 
@@ -39,6 +41,14 @@ namespace {
 template <typename T>
 void ResizeVector(thrust::device_vector<T>& vec, rbmd::Id size) {
   vec.resize(static_cast<std::size_t>(std::max<rbmd::Id>(size, 0)));
+}
+
+template <typename T>
+void GrowScratchVector(thrust::device_vector<T>& vec, rbmd::Id size) {
+  const auto required = static_cast<std::size_t>(std::max<rbmd::Id>(size, 0));
+  if (vec.size() < required) {
+    vec.resize(required);
+  }
 }
 
 struct RowMajorPermIndex {
@@ -235,13 +245,7 @@ LinkedCell::LinkedCell() {
       *(_structure_info_data->_num_atoms);  // do this because nativate num
   this->_native_atoms_num = this->_total_atoms_num;
   this->_ghost_atoms_num = 0;
-#ifdef USE_MPI
-  const auto global_atoms = GET_RBMD_PARALLEL->_global_structure_info.total_atoms;
-  this->_atom_id_to_idx.resize(static_cast<std::size_t>(
-      std::max<rbmd::Id>(global_atoms, this->_total_atoms_num)));
-#else
-  this->_atom_id_to_idx.resize(static_cast<std::size_t>(this->_total_atoms_num));
-#endif
+
 }
 
 LinkedCell::~LinkedCell() {
@@ -436,6 +440,7 @@ void LinkedCell::AssignAtomsToCell() {
                           _device_data->_d_box, GetDataPtr(),
                           thrust::raw_pointer_cast(this->_cells.data()),
                           thrust::raw_pointer_cast(_per_atom_cell_id.data()),
+                          this->_native_atoms_num,
                           this->_total_atoms_num);
   AppendNativeOwnershipInvariantPostAssignRow(this);
 }
@@ -483,6 +488,56 @@ void LinkedCell::SyncHToD() {
 }
 
 void LinkedCell::SortAtomsByCellKey() {
+  // V6 experiment: keep simulation arrays in ownership order and sort only
+  // particle indices for cell traversal. Candidate generation already uses
+  // _cell_sorted_atom_indices, so physically gathering every state/topology
+  // array on each rebuild is unnecessary for neighbor-list correctness.
+  {
+    const rbmd::Id total_n_index_only = _total_atoms_num;
+    if (total_n_index_only < 0 || total_n_index_only == 0) {
+      RebuildAtomIndexMap();
+      return;
+    }
+    if (_device_data->_d_atoms_id.size() <
+            static_cast<std::size_t>(total_n_index_only) ||
+        _per_atom_cell_id.size() <
+            static_cast<std::size_t>(total_n_index_only)) {
+      throw std::runtime_error(
+          "LinkedCell::SortAtomsByCellKey count/vector size mismatch before "
+          "index-only cell sort");
+    }
+
+    _cell_sorted_cell_id.resize(static_cast<std::size_t>(total_n_index_only));
+    _cell_sorted_atom_indices.resize(
+        static_cast<std::size_t>(total_n_index_only));
+    _cell_sorted_px.resize(static_cast<std::size_t>(total_n_index_only));
+    _cell_sorted_py.resize(static_cast<std::size_t>(total_n_index_only));
+    _cell_sorted_pz.resize(static_cast<std::size_t>(total_n_index_only));
+    op::BuildAtomicCellListOp<device::DEVICE_GPU> build_atomic_cell_list;
+    build_atomic_cell_list(
+        thrust::raw_pointer_cast(_per_atom_cell_id.data()),
+        total_n_index_only, _total_cells,
+        thrust::raw_pointer_cast(_in_atom_list_start_index.data()),
+        thrust::raw_pointer_cast(_in_atom_list_end_index.data()),
+        thrust::raw_pointer_cast(_cell_sorted_cell_id.data()),
+        thrust::raw_pointer_cast(_cell_sorted_atom_indices.data()),
+        thrust::raw_pointer_cast(_device_data->_d_px.data()),
+        thrust::raw_pointer_cast(_device_data->_d_py.data()),
+        thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+        thrust::raw_pointer_cast(_cell_sorted_px.data()),
+        thrust::raw_pointer_cast(_cell_sorted_py.data()),
+        thrust::raw_pointer_cast(_cell_sorted_pz.data()));
+
+    RebuildAtomIndexMap();
+  // Index-only sorting leaves particle storage untouched. Record the identity
+  // old-to-new map so cached halo exchange indices remain provably valid.
+  _last_sort_old_to_new.resize(
+      static_cast<std::size_t>(total_n_index_only));
+  thrust::sequence(_last_sort_old_to_new.begin(),
+                   _last_sort_old_to_new.end(), rbmd::Id(0));
+  }
+  return;
+
   auto atom_style = DataManager::getInstance().getConfigData()->Get<std::string>(
       "atom_style", "init_configuration", "read_data");
   const bool has_charge = (atom_style == "charge" || atom_style == "full");
@@ -492,6 +547,7 @@ void LinkedCell::SortAtomsByCellKey() {
   const rbmd::Id native_n = _native_atoms_num;
   const rbmd::Id total_n = _total_atoms_num;
   if (native_n < 0 || total_n < 0 || total_n == 0) {
+    RebuildAtomIndexMap();
     return;
   }
   if (data._d_atoms_id.size() < static_cast<std::size_t>(total_n) ||
@@ -500,6 +556,9 @@ void LinkedCell::SortAtomsByCellKey() {
         "LinkedCell::SortAtomsByCellKey count/vector size mismatch before "
         "MapAtomidToIdx");
   }
+  _last_sort_old_to_new.resize(static_cast<std::size_t>(total_n));
+  thrust::fill(_last_sort_old_to_new.begin(), _last_sort_old_to_new.end(),
+               rbmd::Id(-1));
 
   auto reorder_1d_segment = [&](auto& vec, const thrust::device_vector<int>& perm,
                                 rbmd::Id dst_start) {
@@ -553,6 +612,9 @@ void LinkedCell::SortAtomsByCellKey() {
     thrust::stable_sort_by_key(_per_atom_cell_id.begin(),
                                _per_atom_cell_id.begin() + native_n,
                                perm_native.begin());
+    thrust::scatter(thrust::make_counting_iterator<rbmd::Id>(0),
+                    thrust::make_counting_iterator<rbmd::Id>(native_n),
+                    perm_native.begin(), _last_sort_old_to_new.begin());
 
     reorder_1d_segment(data._d_vx, perm_native, 0);
     reorder_1d_segment(data._d_vy, perm_native, 0);
@@ -634,6 +696,9 @@ void LinkedCell::SortAtomsByCellKey() {
     thrust::stable_sort_by_key(_per_atom_cell_id.begin() + native_n,
                                _per_atom_cell_id.begin() + total_n,
                                perm_halo.begin());
+    thrust::scatter(thrust::make_counting_iterator<rbmd::Id>(native_n),
+                    thrust::make_counting_iterator<rbmd::Id>(total_n),
+                    perm_halo.begin(), _last_sort_old_to_new.begin());
 
     reorder_1d_segment(data._d_atoms_id, perm_halo, native_n);
     reorder_1d_segment(data._d_atoms_type, perm_halo, native_n);
@@ -660,16 +725,28 @@ void LinkedCell::SortAtomsByCellKey() {
                                _cell_sorted_atom_indices.begin());
   }
 
-  thrust::fill(_atom_id_to_idx.begin(), _atom_id_to_idx.end(), rbmd::Id(-1));
-  op::MapAtomidToIdxOp<device::DEVICE_GPU> map_atomid_to_idx_op;
-  map_atomid_to_idx_op(thrust::raw_pointer_cast(_atom_id_to_idx.data()),
-                       raw_ptr(_device_data->_d_atoms_id), _total_atoms_num);
+  RebuildAtomIndexMap();
 }
 
 
+void LinkedCell::RebuildAtomIndexMap() {
+  if (_total_atoms_num < 0 ||
+      _total_atoms_num > std::numeric_limits<rbmd::LocalAtomIndex>::max()) {
+    throw std::overflow_error("Local atoms plus ghosts exceed 32-bit local indices; use more MPI ranks");
+  }
+  const auto count = static_cast<std::size_t>(_total_atoms_num);
+  _atom_id_keys.resize(count);
+  _atom_id_indices.resize(count);
+  thrust::copy_n(_device_data->_d_atoms_id.begin(), count, _atom_id_keys.begin());
+  thrust::sequence(_atom_id_indices.begin(), _atom_id_indices.end(),
+                   rbmd::LocalAtomIndex(0));
+  thrust::stable_sort_by_key(_atom_id_keys.begin(), _atom_id_keys.end(),
+                            _atom_id_indices.begin());
+}
+
 template <typename T>
 void LinkedCell::MapAtomId(thrust::device_vector<T>& d_target) {
-  auto* d_atom_id_to_idx = thrust::raw_pointer_cast(_atom_id_to_idx.data());
+  const auto d_atom_id_to_idx = AtomIndexMap();
   thrust::transform(d_target.begin(), d_target.end(), d_target.begin(),
                     [d_atom_id_to_idx] __device__(T t) {
                       return static_cast<T>(d_atom_id_to_idx[t]);
@@ -677,18 +754,21 @@ void LinkedCell::MapAtomId(thrust::device_vector<T>& d_target) {
 }
 template <typename T>
 void LinkedCell::MapAtomIdForce(thrust::device_vector<T>& d_target) {
-  // 创建一个临时数组来存储结果
-  thrust::device_vector<T> d_fx_mapped(d_target.size());
-
-  // 使用 gather 函数重新排列 d_fx
-  thrust::gather(_atom_id_to_idx.begin(),  // 索引数组的起始迭代器
-                 _atom_id_to_idx.end(),    // 索引数组的结束迭代器
-                 d_target.begin(),         // 输入数组的起始迭代器
-                 d_fx_mapped.begin()       // 输出数组的起始迭代器
-  );
-
-  // 将结果复制回原数组
-  d_target = d_fx_mapped;
+  // Return only this buffer's atoms in ID order, excluding ghost indices
+  // when the caller supplies an owned-only force buffer.
+  thrust::device_vector<rbmd::LocalAtomIndex> order(d_target.size());
+  const auto count = d_target.size();
+  if (count > _atom_id_indices.size())
+    throw std::runtime_error("Force buffer exceeds local atom map size");
+  auto end = thrust::copy_if(_atom_id_indices.begin(), _atom_id_indices.end(),
+      order.begin(), [count] __device__(rbmd::LocalAtomIndex index) {
+        return index >= 0 && static_cast<std::size_t>(index) < count;
+      });
+  if (static_cast<std::size_t>(end - order.begin()) != count)
+    throw std::runtime_error("Local force permutation is incomplete");
+  thrust::device_vector<T> result(count);
+  thrust::gather(order.begin(), order.end(), d_target.begin(), result.begin());
+  d_target.swap(result);
 }
 
 void LinkedCell::AllocDeviceMemory() {
@@ -837,18 +917,21 @@ void LinkedCell::ResizePerAtomVectors(rbmd::Id target_total_atoms) {
   ResizeVector(_device_data->_d_force_kspace_x, safe_total);
   ResizeVector(_device_data->_d_force_kspace_y, safe_total);
   ResizeVector(_device_data->_d_force_kspace_z, safe_total);
-  ResizeVector(_device_data->_d_force_bond_x, safe_total);
-  ResizeVector(_device_data->_d_force_bond_y, safe_total);
-  ResizeVector(_device_data->_d_force_bond_z, safe_total);
-  ResizeVector(_device_data->_d_force_angle_x, safe_total);
-  ResizeVector(_device_data->_d_force_angle_y, safe_total);
-  ResizeVector(_device_data->_d_force_angle_z, safe_total);
-  ResizeVector(_device_data->_d_force_dihedral_x, safe_total);
-  ResizeVector(_device_data->_d_force_dihedral_y, safe_total);
-  ResizeVector(_device_data->_d_force_dihedral_z, safe_total);
-  ResizeVector(_device_data->_d_force_improper_x, safe_total);
-  ResizeVector(_device_data->_d_force_improper_y, safe_total);
-  ResizeVector(_device_data->_d_force_improper_z, safe_total);
+  // Bonded kernels consume explicit atom counts and clear their scratch before
+  // use. Retain constructed storage across halo removal/reinsertion, avoiding
+  // repeated Thrust initialization kernels when the logical atom count grows.
+  GrowScratchVector(_device_data->_d_force_bond_x, safe_total);
+  GrowScratchVector(_device_data->_d_force_bond_y, safe_total);
+  GrowScratchVector(_device_data->_d_force_bond_z, safe_total);
+  GrowScratchVector(_device_data->_d_force_angle_x, safe_total);
+  GrowScratchVector(_device_data->_d_force_angle_y, safe_total);
+  GrowScratchVector(_device_data->_d_force_angle_z, safe_total);
+  GrowScratchVector(_device_data->_d_force_dihedral_x, safe_total);
+  GrowScratchVector(_device_data->_d_force_dihedral_y, safe_total);
+  GrowScratchVector(_device_data->_d_force_dihedral_z, safe_total);
+  GrowScratchVector(_device_data->_d_force_improper_x, safe_total);
+  GrowScratchVector(_device_data->_d_force_improper_y, safe_total);
+  GrowScratchVector(_device_data->_d_force_improper_z, safe_total);
   ResizeVector(_device_data->_d_f2_x, safe_total);
   ResizeVector(_device_data->_d_f2_y, safe_total);
   ResizeVector(_device_data->_d_f2_z, safe_total);
@@ -859,10 +942,10 @@ void LinkedCell::ResizePerAtomVectors(rbmd::Id target_total_atoms) {
   ResizeVector(_device_data->_d_flat_virial_lj, safe_total_virial);
   ResizeVector(_device_data->_d_flat_virial_specialcoul, safe_total_virial);
   ResizeVector(_device_data->_d_flat_virial_kspace, safe_total_virial);
-  ResizeVector(_device_data->_d_flat_virial_bond_atom, safe_total_virial);
-  ResizeVector(_device_data->_d_flat_virial_angle_atom, safe_total_virial);
-  ResizeVector(_device_data->_d_flat_virial_dihedral_atom, safe_total_virial);
-  ResizeVector(_device_data->_d_flat_virial_improper_atom, safe_total_virial);
+  GrowScratchVector(_device_data->_d_flat_virial_bond_atom, safe_total_virial);
+  GrowScratchVector(_device_data->_d_flat_virial_angle_atom, safe_total_virial);
+  GrowScratchVector(_device_data->_d_flat_virial_dihedral_atom, safe_total_virial);
+  GrowScratchVector(_device_data->_d_flat_virial_improper_atom, safe_total_virial);
 
   if (_device_data->nmax < safe_total) {
     _device_data->ResizeTopology(safe_total);

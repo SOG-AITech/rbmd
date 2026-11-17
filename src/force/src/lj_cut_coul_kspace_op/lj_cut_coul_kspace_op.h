@@ -1,7 +1,7 @@
 #pragma once
 #include "../../common/device_types.h"
 #include "../../common/types.h"
-#include "../../data_manager/include/model/box.h"
+#include "../../data_manager/include/model/box.h"
 
 namespace op
 {
@@ -57,6 +57,7 @@ namespace op
                   const rbmd::Real alpha,
                   const rbmd::Real qqr2e,
                   const rbmd::Id* atoms_type,
+                  const rbmd::Id* atoms_id,
                   const rbmd::Real* sigma,
                   const rbmd::Real* eps,
                   const rbmd::Id* start_id,
@@ -64,13 +65,23 @@ namespace op
                   const rbmd::Id* id_verletlist,
                   const rbmd::Id* id_random_neighbor,
                   const rbmd::Id* random_neighbor_num,
+                  const rbmd::Real* random_neighbor_weight,
+                  bool fused_candidate_sampling,
+                  const rbmd::Id* candidate_start,
+                  const rbmd::Id* candidate_end,
+                  const rbmd::Id* candidate_num,
+                  const rbmd::Id* candidate_neighbors,
+                  rbmd::Id candidate_capacity,
+                  bool candidate_implicit_offsets,
+                  rbmd::Id sample_epoch,
                   const rbmd::Real* charge,
                   const rbmd::Real* px,
                   const rbmd::Real* py,
                   const rbmd::Real* pz,
                   rbmd::Real* fx,
                   rbmd::Real* fy,
-                  rbmd::Real* fz);
+                  rbmd::Real* fz,
+                  rbmd::Real* force_sum);
        };
 
         template <typename DEVICE>
@@ -163,6 +174,7 @@ namespace op
                 const rbmd::Real alpha,
                 const rbmd::Real qqr2e,
                 const rbmd::Id* atoms_type,
+                const rbmd::Id* atoms_id,
                 const rbmd::Real* sigma,
                 const rbmd::Real* eps,
                 const rbmd::Id* start_id,
@@ -170,13 +182,23 @@ namespace op
                 const rbmd::Id* id_verletlist,
                 const rbmd::Id* id_random_neighbor,
                 const rbmd::Id* random_neighbor_num,
+                const rbmd::Real* random_neighbor_weight,
+                bool fused_candidate_sampling,
+                const rbmd::Id* candidate_start,
+                const rbmd::Id* candidate_end,
+                const rbmd::Id* candidate_num,
+                const rbmd::Id* candidate_neighbors,
+                rbmd::Id candidate_capacity,
+                bool candidate_implicit_offsets,
+                rbmd::Id sample_epoch,
                 const rbmd::Real* charge,
                 const rbmd::Real* px,
                 const rbmd::Real* py,
                 const rbmd::Real* pz,
                 rbmd::Real* fx,
                 rbmd::Real* fy,
-                rbmd::Real* fz);
+                rbmd::Real* fz,
+                rbmd::Real* force_sum);
      };
 
 

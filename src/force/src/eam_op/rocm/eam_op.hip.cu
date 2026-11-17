@@ -148,14 +148,17 @@ __device__ rbmd::Id EAMDirectNeighborCell(
   return (neighbor_z * dim_y + neighbor_y) * dim_x + neighbor_x;
 }
 
+template <bool COMPUTE_PAIR = false>
 __global__ void FpDirect(
     Box box, EAMParameters eam_paras, rbmd::Real cut_off, rbmd::Id num_atoms,
     EAMDirectTraversalData traversal, const Real7* rhor_spline,
     const Real7* frho_spline, const rbmd::Real* px, const rbmd::Real* py,
     const rbmd::Real* pz, rbmd::Real* eam_fp,
-    rbmd::Real* energy_embedding) {
-  __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage storage;
+    rbmd::Energy* energy_embedding, const Real7* z2r_spline = nullptr,
+    rbmd::Energy* energy_pair = nullptr) {
+  __shared__ typename BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>::TempStorage storage;
   rbmd::Real embedding = 0;
+  rbmd::Energy pair_energy = 0;
   const rbmd::Id atom = blockIdx.x * blockDim.x + threadIdx.x;
   if (atom < num_atoms) {
     rbmd::Real rho = 0;
@@ -182,15 +185,36 @@ __global__ void FpDirect(
           rbmd::Real local_rho = 0;
           EAMRho(rsq, eam_paras, rhor_spline, local_rho);
           rho += local_rho;
+          if (COMPUTE_PAIR) {
+            // Pair energy depends only on distance and z2r, so it can share
+            // the density traversal before the fp halo exchange. Keep the
+            // original EAMForce arithmetic and neighbor accumulation order.
+            rbmd::Real unused_force = 0;
+            rbmd::Real phi = 0;
+            EAMForce(rsq, eam_paras, rhor_spline, z2r_spline,
+                     rbmd::Real(0), rbmd::Real(0), unused_force, phi);
+            pair_energy += phi;
+          }
         }
       }
     }
     EAMFp(eam_paras, frho_spline, rho, eam_fp[atom], embedding);
   }
-  const rbmd::Real block_sum =
-      BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(storage).Sum(embedding);
+  const rbmd::Energy block_sum =
+      BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>(storage).Sum(embedding);
   if (threadIdx.x == 0) {
-    atomicAdd(energy_embedding, block_sum);
+    energy_embedding[blockIdx.x] = block_sum;
+  }
+  if (COMPUTE_PAIR) {
+    // Separate scratch avoids reusing storage while another warp is still
+    // completing the embedding reduction.
+    __shared__ typename BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>::TempStorage
+        pair_storage;
+    const rbmd::Energy pair_sum =
+        BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>(pair_storage).Sum(0.5 * pair_energy);
+    if (threadIdx.x == 0) {
+      energy_pair[blockIdx.x] = pair_sum;
+    }
   }
 }
 
@@ -270,9 +294,9 @@ __global__ void EAMEnergyDirect(
     rbmd::Id num_atoms, EAMDirectTraversalData traversal,
     const Real7* rhor_spline, const Real7* z2r_spline,
     const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
-    const rbmd::Real* eam_fp, rbmd::Real* energy_pair) {
-  __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage storage;
-  rbmd::Real pair_energy = 0;
+    const rbmd::Real* eam_fp, rbmd::Energy* energy_pair) {
+  __shared__ typename BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>::TempStorage storage;
+  rbmd::Energy pair_energy = 0;
   const rbmd::Id atom = blockIdx.x * blockDim.x + threadIdx.x;
   if (atom < num_atoms) {
     const rbmd::Real cutoff_sq = cut_off * cut_off;
@@ -304,10 +328,10 @@ __global__ void EAMEnergyDirect(
       }
     }
   }
-  const rbmd::Real block_sum =
-      BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(storage).Sum(0.5 * pair_energy);
+  const rbmd::Energy block_sum =
+      BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>(storage).Sum(0.5 * pair_energy);
   if (threadIdx.x == 0) {
-    atomicAdd(energy_pair, block_sum);
+    energy_pair[blockIdx.x] = block_sum;
   }
 }
 
@@ -319,12 +343,12 @@ __global__ void FpVerlet(
     const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
     const Real7* rhor_spline,const Real7* frho_spline,
     const rbmd::Real* px, const rbmd::Real* py,
-    const rbmd::Real* pz,rbmd::Real* eam_fp,rbmd::Real*  energy_embedding) {
-  __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
+    const rbmd::Real* pz,rbmd::Real* eam_fp,rbmd::Energy* energy_embedding) {
+  __shared__ typename BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>::TempStorage
   temp_storage;
 
   rbmd::Real  sum_rho= 0;
-  rbmd::Real  sum_phi= 0;
+  rbmd::Energy sum_phi = 0;
 
   unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid1 < num_atoms) {
@@ -334,7 +358,7 @@ __global__ void FpVerlet(
     rbmd::Real z1 = pz[tid1];
 
     //
-    for (int j = start_id[tid1]; j < end_id[tid1]; ++j) {
+    for (rbmd::NeighborOffset j = start_id[tid1]; j < end_id[tid1]; ++j) {
       rbmd::Id tid2 = id_verletlist[j];
       rbmd::Id typej = atoms_type[tid2];
 
@@ -368,12 +392,12 @@ __global__ void FpVerlet(
 
   }
 
-  rbmd::Real block_sum =
-BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage)
+  rbmd::Energy block_sum =
+BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>(temp_storage)
     .Sum(sum_phi);
 
   if (threadIdx.x == 0) {
-    atomicAdd(energy_embedding, block_sum);
+    energy_embedding[blockIdx.x] = block_sum;
   }
 }
 
@@ -385,11 +409,11 @@ __global__ void EAMForceVerlet(
   const Real7* rhor_spline,const Real7* z2r_spline,
   const rbmd::Real* px, const rbmd::Real* py,const rbmd::Real* pz,
   const rbmd::Real* eam_fp,rbmd::Real* fx,rbmd::Real* fy, rbmd::Real* fz,
-  rbmd::Real* energy_pair)
+  rbmd::Energy* energy_pair)
 {
-  __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
+  __shared__ typename BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>::TempStorage
   temp_storage;
-  rbmd::Real local_phi =0.0;
+  rbmd::Energy local_phi =0.0;
 
   //init
   rbmd::Real sum_fx = 0;
@@ -404,7 +428,7 @@ __global__ void EAMForceVerlet(
     rbmd::Real y1 = py[tid1];
     rbmd::Real z1 = pz[tid1];
 
-    for (int j = start_id[tid1]; j < end_id[tid1]; ++j) {
+    for (rbmd::NeighborOffset j = start_id[tid1]; j < end_id[tid1]; ++j) {
       rbmd::Id tid2 = id_verletlist[j];
       rbmd::Id typej = atoms_type[tid2];
       rbmd::Real fp_j = eam_fp[tid2];
@@ -443,12 +467,12 @@ __global__ void EAMForceVerlet(
     fz[tid1]  = sum_fz;
   }
 
-  rbmd::Real block_sum =
-  BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage)
+  rbmd::Energy block_sum =
+  BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>(temp_storage)
       .Sum(0.5 * local_phi);
 
   if (threadIdx.x == 0) {
-    atomicAdd(energy_pair, block_sum);
+    energy_pair[blockIdx.x] = block_sum;
   }
 
 }
@@ -475,7 +499,7 @@ __global__ void RhoRBL(
     rbmd::Real z1 = pz[tid1];
 
     // rs
-    for (int j = start_id[tid1]; j < end_id[tid1]; ++j) {
+    for (rbmd::NeighborOffset j = start_id[tid1]; j < end_id[tid1]; ++j) {
       rbmd::Id tid2 = id_verletlist[j];
       if (tid2 == static_cast<rbmd::Id>(tid1)) {
         continue;
@@ -564,7 +588,7 @@ __global__ void FpRBL(
     rbmd::Real z1 = pz[tid1];
 
     // rs
-    for (int j = start_id[tid1]; j < end_id[tid1]; ++j) {
+    for (rbmd::NeighborOffset j = start_id[tid1]; j < end_id[tid1]; ++j) {
       rbmd::Id tid2 = id_verletlist[j];
       if (tid2 == static_cast<rbmd::Id>(tid1)) {
         continue;
@@ -670,7 +694,7 @@ __global__ void EAMForceRBL(
     rbmd::Real z1 = pz[tid1];
 
     //rs
-    for (int j = start_id[tid1]; j < end_id[tid1]; ++j) {
+    for (rbmd::NeighborOffset j = start_id[tid1]; j < end_id[tid1]; ++j) {
       rbmd::Id tid2 = id_verletlist[j];
       if (tid2 == static_cast<rbmd::Id>(tid1)) {
         continue;
@@ -760,13 +784,13 @@ __global__ void EAMForceEnergy(
   const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
   const Real7* rhor_spline,const Real7* z2r_spline,
   const rbmd::Real* px, const rbmd::Real* py,const rbmd::Real* pz,
-  const rbmd::Real* eam_fp,  rbmd::Real* energy_pair)
+  const rbmd::Real* eam_fp,  rbmd::Energy* energy_pair)
 {
-  __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
+  __shared__ typename BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>::TempStorage
   temp_storage;
 
   //init
-  rbmd::Real sum_phi =0.0;
+  rbmd::Energy sum_phi =0.0;
 
   unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid1 < num_atoms) {
@@ -776,7 +800,7 @@ __global__ void EAMForceEnergy(
     rbmd::Real y1 = py[tid1];
     rbmd::Real z1 = pz[tid1];
 
-    for (int j = start_id[tid1]; j < end_id[tid1]; ++j) {
+    for (rbmd::NeighborOffset j = start_id[tid1]; j < end_id[tid1]; ++j) {
       rbmd::Id tid2 = id_verletlist[j];
       rbmd::Id typej = atoms_type[tid2];
       rbmd::Real fp_j = eam_fp[tid2];
@@ -807,12 +831,12 @@ __global__ void EAMForceEnergy(
     }
   }
 
-  rbmd::Real block_sum =
-  BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage)
+  rbmd::Energy block_sum =
+  BLOCKREDUCE<rbmd::Energy, BLOCK_SIZE>(temp_storage)
       .Sum(0.5 * sum_phi);
 
   if (threadIdx.x == 0) {
-    atomicAdd(energy_pair, block_sum);
+    energy_pair[blockIdx.x] = block_sum;
   }
 }
 
@@ -826,7 +850,8 @@ const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
 const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
 const Real7* rhor_spline,const Real7* frho_spline,
 const rbmd::Real* px, const rbmd::Real* py,const rbmd::Real* pz,
-rbmd::Real* eam_fp ,rbmd::Real* energy_embedding) {
+rbmd::Real* eam_fp ,rbmd::Energy* energy_embedding) {
+  if (num_atoms == 0) return;
   unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   // 1.  rho  ->  Fp
@@ -844,7 +869,8 @@ void ComputeEAMForceVerlet<device::DEVICE_GPU>::operator()(
     const rbmd::Id* id_verletlist, const Real7* rhor_spline,
     const Real7* z2r_spline, const rbmd::Real* px, const rbmd::Real* py,
     const rbmd::Real* pz, rbmd::Real* eam_fp, rbmd::Real* fx,
-    rbmd::Real* fy, rbmd::Real* fz, rbmd::Real* energy_pair) {
+    rbmd::Real* fy, rbmd::Real* fz, rbmd::Energy* energy_pair) {
+  if (num_atoms == 0) return;
   unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   CHECK_KERNEL(EAMForceVerlet<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>> (
@@ -858,12 +884,21 @@ void ComputeFpDirect<device::DEVICE_GPU>::operator()(
     rbmd::Id num_atoms, EAMDirectTraversalData traversal,
     const Real7* rhor_spline, const Real7* frho_spline,
     const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
-    rbmd::Real* eam_fp, rbmd::Real* energy_embedding) {
+    rbmd::Real* eam_fp, rbmd::Energy* energy_embedding,
+    const Real7* z2r_spline, rbmd::Energy* energy_pair) {
+  if (num_atoms == 0) return;
   const unsigned int blocks_per_grid =
       (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
-  CHECK_KERNEL(FpDirect<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
-      box, eam_paras, cut_off, num_atoms, traversal, rhor_spline,
-      frho_spline, px, py, pz, eam_fp, energy_embedding));
+  if (energy_pair != nullptr) {
+    CHECK_KERNEL((FpDirect<true><<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+        box, eam_paras, cut_off, num_atoms, traversal, rhor_spline,
+        frho_spline, px, py, pz, eam_fp, energy_embedding,
+        z2r_spline, energy_pair)));
+  } else {
+    CHECK_KERNEL((FpDirect<false><<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+        box, eam_paras, cut_off, num_atoms, traversal, rhor_spline,
+        frho_spline, px, py, pz, eam_fp, energy_embedding)));
+  }
 }
 
 void ComputeEAMForceRBLDirect<device::DEVICE_GPU>::operator()(
@@ -874,6 +909,7 @@ void ComputeEAMForceRBLDirect<device::DEVICE_GPU>::operator()(
     const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
     const rbmd::Real* eam_fp, rbmd::Real* fx, rbmd::Real* fy,
     rbmd::Real* fz) {
+  if (num_atoms == 0) return;
   const unsigned int blocks_per_grid =
       (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
   CHECK_KERNEL(EAMForceRBLDirect<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
@@ -887,7 +923,8 @@ void ComputeEAMEnergyDirect<device::DEVICE_GPU>::operator()(
     rbmd::Id num_atoms, EAMDirectTraversalData traversal,
     const Real7* rhor_spline, const Real7* z2r_spline,
     const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
-    const rbmd::Real* eam_fp, rbmd::Real* energy_pair) {
+    const rbmd::Real* eam_fp, rbmd::Energy* energy_pair) {
+  if (num_atoms == 0) return;
   const unsigned int blocks_per_grid =
       (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
   CHECK_KERNEL(EAMEnergyDirect<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
@@ -904,6 +941,7 @@ void ComputeRhoRBL<device::DEVICE_GPU>::operator()(
     const rbmd::Id* id_random_neighbor,const rbmd::Id* random_neighbor_num,
     const Real7* rhor_spline,const rbmd::Real* px, const rbmd::Real* py,
     const rbmd::Real* pz,rbmd::Real* eam_rho) {
+  if (num_atoms == 0) return;
   unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   CHECK_KERNEL(RhoRBL<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>> (
@@ -923,6 +961,7 @@ void ComputeFpRBL<device::DEVICE_GPU>::operator()(
     const Real7* rhor_spline,const Real7* frho_spline,
     const rbmd::Real* px, const rbmd::Real* py,
     const rbmd::Real* pz,rbmd::Real* eam_fp) {
+  if (num_atoms == 0) return;
   unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   CHECK_KERNEL(FpRBL<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>> (
@@ -945,6 +984,7 @@ void ComputeEAMForceRBL<device::DEVICE_GPU>::operator()(
     const Real7* rhor_spline,const Real7* z2r_spline,
     const rbmd::Real* px, const rbmd::Real* py,const rbmd::Real* pz,
     const rbmd::Real* eam_fp,rbmd::Real* fx,rbmd::Real* fy, rbmd::Real* fz) {
+  if (num_atoms == 0) return;
   unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   CHECK_KERNEL(EAMForceRBL<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>> (
@@ -962,7 +1002,8 @@ void ComputeEAMEnergy<device::DEVICE_GPU>::operator()(
     const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
     const Real7* rhor_spline,const Real7* z2r_spline,
     const rbmd::Real* px, const rbmd::Real* py,const rbmd::Real* pz,
-    const rbmd::Real* eam_fp,rbmd::Real* energy_pair) {
+    const rbmd::Real* eam_fp,rbmd::Energy* energy_pair) {
+  if (num_atoms == 0) return;
   unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
   CHECK_KERNEL(EAMForceEnergy<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>> (
           box, eam_paras,rc, num_atoms,atoms_type, atoms_id,  start_id, end_id,

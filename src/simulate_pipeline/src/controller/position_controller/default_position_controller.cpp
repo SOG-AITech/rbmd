@@ -145,13 +145,11 @@ void DefaultPositionController::Update() {
         thrust::host_vector<rbmd::Id> h_flagY = _device_data->_d_flagY;
         thrust::host_vector<rbmd::Id> h_flagZ = _device_data->_d_flagZ;
 
-        auto atom_id_to_idx =
-          LinkedCellLocator::GetInstance().GetLinkedCell()->_atom_id_to_idx;
 
         std::ofstream fac_file("h_unwarp.txt");
         if (fac_file.is_open()) {
           for (rbmd::Id i = 0; i < h_unwarp_px.size(); ++i) {
-            auto index = atom_id_to_idx[i];
+            auto index = i;
 
             fac_file << i  << " "<< h_px[ index]  <<", "<< h_py[ index]  << ", " <<h_pz[ index]<<  " ,"<<
               h_flagX[ index]  <<", "<< h_flagY[ index]  << ", " <<h_flagZ[ index]
@@ -232,12 +230,12 @@ void  DefaultPositionController::PBC() {
   //   thrust::host_vector<rbmd::Id> h_flagZ = _device_data->_d_flagZ;
   //
   //   auto atom_id_to_idx =
-  //     LinkedCellLocator::GetInstance().GetLinkedCell()->_atom_id_to_idx;
+  //     LinkedCellLocator::GetInstance().GetLinkedCell()->AtomIndexMap();
   //
   //   std::ofstream fac_file("h_unwarp.txt");
   //   if (fac_file.is_open()) {
   //     for (rbmd::Id i = 0; i < h_unwarp_px.size(); ++i) {
-  //       auto index = atom_id_to_idx[i];
+  //       auto index = i;
   //
   //       fac_file << i  << " "<< h_px[ i]  <<", "<< h_py[ i]  << ", " <<h_pz[ i]<<  " ,"<<
   //         h_flagX[ i]  <<", "<< h_flagY[ i]  << ", " <<h_flagZ[ i]

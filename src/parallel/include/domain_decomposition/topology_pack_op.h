@@ -22,7 +22,7 @@ inline int ComputeSizeExchange(int bond_per_atom, int angle_per_atom,
                                 int maxspecial) {
   // 固定项（单位：double）
   // 1(size_exchange) + 10(base attrs) + 4(num_bond/angle/dihedral/improper) + 3(nspecial)
-  constexpr int kBase = 18;
+  constexpr int kBase = 24;  // Includes image[3] and unwrapped[3].
   return kBase + maxspecial + 2 * bond_per_atom + 4 * angle_per_atom +
          5 * dihedral_per_atom + 5 * improper_per_atom;
 }
@@ -50,6 +50,9 @@ struct TopologyPackParams {
   const rbmd::Id* d_type;
   const rbmd::Id* d_molecule;
   const rbmd::Real* d_charge;
+  const rbmd::Id* d_image_x;
+  const rbmd::Id* d_image_y;
+  const rbmd::Id* d_image_z;
 
   // Bond 数据 (device, 2D 扁平化)
   const int* d_num_bond;
@@ -89,7 +92,7 @@ struct TopologyPackParams {
   int maxspecial;
 
   // ---- Position shift（在 pack 时内部应用，避免污染源数据） ----
-  // 每个发送原子的位移量 (device, 大小 nsend)，索引对应 sendlist 中的位置
+  // 每个源原子的位移量 (device)，索引对应 sendlist 中的原子索引
   // 若为 nullptr 则不做 shift（向后兼容）
   const rbmd::Real* d_shift_x = nullptr;
   const rbmd::Real* d_shift_y = nullptr;
@@ -120,6 +123,12 @@ struct TopologyUnpackParams {
   rbmd::Id* d_type;
   rbmd::Id* d_molecule;
   rbmd::Real* d_charge;
+  rbmd::Id* d_image_x;
+  rbmd::Id* d_image_y;
+  rbmd::Id* d_image_z;
+  rbmd::Real* d_ux;
+  rbmd::Real* d_uy;
+  rbmd::Real* d_uz;
 
   // Bond 数据 (device, 2D 扁平化)
   int* d_num_bond;
@@ -173,8 +182,10 @@ struct TopologyUnpackParams {
  * [8] type (encoded)
  * [9] molecule (encoded)
  * [10] charge
- * [11] num_bond (encoded)
- * [12...] bond_type[k], bond_atom[k] (循环，encoded)
+ * [11-13] image x/y/z (encoded)
+ * [14-16] unwrapped x/y/z
+ * [17] num_bond (encoded)
+ * [18...] bond_type[k], bond_atom[k] (循环，encoded)
  * [...] num_angle (encoded)
  * [...] angle_type[k], angle_atom1/2/3[k] (循环，encoded)
  * [...] num_dihedral (encoded)

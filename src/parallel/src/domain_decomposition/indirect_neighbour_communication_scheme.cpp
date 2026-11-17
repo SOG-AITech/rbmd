@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -41,6 +42,7 @@
 
 #include "data_manager.h"
 #include "common/neighbor_skin.h"
+#include "common/mpi_chunked.h"
 #include "neighbor_acquirer.h"
 
 extern rbmd::Id test_current_step;
@@ -71,20 +73,145 @@ bool NearlyEqualCutoff(rbmd::Real lhs, rbmd::Real rhs) {
   return std::abs(lhs - rhs) <= scale * rbmd::Real(1e-6);
 }
 
-template <typename T>
-std::vector<T> CopyDeviceBufferColumn(const char* buffer, size_t offset,
-                                      int count) {
-  if (buffer == nullptr || count <= 0) {
-    return {};
+struct HostGhostCoordinates {
+  std::vector<rbmd::Id> ids;
+  std::vector<rbmd::Real> x, y, z;
+};
+
+HostGhostCoordinates CopyGhostCoordinates(const char* buffer, int count) {
+  HostGhostCoordinates result;
+  if (count <= 0) {
+    return result;
   }
-  const auto* raw = reinterpret_cast<const T*>(buffer + offset);
-  thrust::device_ptr<const T> begin(raw);
-  thrust::host_vector<T> host(static_cast<size_t>(count));
-  thrust::copy(begin, begin + count, host.begin());
-  return std::vector<T>(host.begin(), host.end());
+  if (buffer == nullptr) {
+    throw std::runtime_error("Missing halo buffer for forward-coordinate capture");
+  }
+  const auto n = static_cast<std::size_t>(count);
+  const auto id_bytes = n * sizeof(rbmd::Id);
+  const auto real_bytes = n * sizeof(rbmd::Real);
+  // HALO_COPIES stores id, type, x, y, z contiguously. Capture its prefix in
+  // one transfer instead of synchronizing the device separately for each field.
+  std::vector<char> host(2 * id_bytes + 3 * real_bytes);
+  CHECK_RUNTIME(MEMCPY(host.data(), buffer, host.size(), D2H));
+  result.ids.resize(n);
+  result.x.resize(n);
+  result.y.resize(n);
+  result.z.resize(n);
+  std::memcpy(result.ids.data(), host.data(), id_bytes);
+  const char* positions = host.data() + 2 * id_bytes;
+  // memcpy also supports byte-buffer offsets without imposing alignment.
+  std::memcpy(result.x.data(), positions, real_bytes);
+  std::memcpy(result.y.data(), positions + real_bytes, real_bytes);
+  std::memcpy(result.z.data(), positions + 2 * real_bytes, real_bytes);
+  return result;
 }
 
+// A flat hash table and contiguous next-index array avoid allocating a hash
+// node and a vector for each atom ID. Reverse insertion preserves ascending
+// atom-index traversal, including nearest-image ties in halo capture.
+class HostAtomIdChains {
+ public:
+  static constexpr std::size_t missing = std::numeric_limits<std::size_t>::max();
+
+  explicit HostAtomIdChains(const thrust::host_vector<rbmd::Id>& ids)
+      : next_(ids.size(), missing) {
+    if (ids.size() > std::numeric_limits<std::size_t>::max() / 2) {
+      throw std::length_error("Host atom ID index is too large");
+    }
+    std::size_t capacity = 1;
+    const std::size_t required = 2 * ids.size();
+    while (capacity < required) {
+      if (capacity > std::numeric_limits<std::size_t>::max() / 2) {
+        throw std::length_error("Host atom ID index capacity overflow");
+      }
+      capacity *= 2;
+    }
+    slots_.resize(capacity);
+    for (std::size_t i = ids.size(); i-- > 0;) {
+      const rbmd::Id key = ids[i];
+      std::size_t bucket = Hash(key) & (capacity - 1);
+      while (slots_[bucket].head != missing && slots_[bucket].key != key) {
+        bucket = (bucket + 1) & (capacity - 1);
+      }
+      auto& slot = slots_[bucket];
+      next_[i] = slot.head;
+      slot.key = key;
+      slot.head = i;
+    }
+  }
+
+  std::size_t Find(rbmd::Id key) const {
+    const std::size_t mask = slots_.size() - 1;
+    std::size_t bucket = Hash(key) & mask;
+    while (slots_[bucket].head != missing) {
+      if (slots_[bucket].key == key) return slots_[bucket].head;
+      bucket = (bucket + 1) & mask;
+    }
+    return missing;
+  }
+  std::size_t Next(std::size_t index) const { return next_[index]; }
+
+ private:
+  struct Slot {
+    rbmd::Id key{};
+    std::size_t head = missing;
+  };
+  static std::size_t Hash(rbmd::Id key) {
+    // Mix all ID bits before power-of-two masking, including for sparse IDs.
+    std::uint64_t value = static_cast<std::uint64_t>(key) + 0x9e3779b97f4a7c15ULL;
+    value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+    return static_cast<std::size_t>(value ^ (value >> 31));
+  }
+  std::vector<Slot> slots_;
+  std::vector<std::size_t> next_;
+};
+
 constexpr int kMaxForwardFields = 12;
+
+int PartnerReceiveSide(CommunicationPartner& partner, unsigned short d) {
+  if (d >= 3) {
+    throw std::out_of_range("Communication dimension is out of range");
+  }
+  const int offset = partner.getOffset()[d];
+  if (offset < 0) {
+    return 0;
+  }
+  if (offset > 0) {
+    return 1;
+  }
+  throw std::logic_error(
+      "Communication partner has no offset in the active dimension");
+}
+
+int OppositeReceiveSide(int receive_side) { return 1 - receive_side; }
+
+std::vector<CommunicationPartner> SqueezePartnersByDirection(
+    std::vector<CommunicationPartner> partners, unsigned short d) {
+  std::vector<CommunicationPartner> squeezed_partners;
+  std::vector<bool> used(partners.size(), false);
+
+  for (std::size_t i = 0; i < partners.size(); ++i) {
+    if (used[i]) {
+      continue;
+    }
+
+    const int rank = partners[i].getRank();
+    const int receive_side = PartnerReceiveSide(partners[i], d);
+    CommunicationPartner combined = partners[i];
+    for (std::size_t j = i + 1; j < partners.size(); ++j) {
+      if (used[j] || partners[j].getRank() != rank ||
+          PartnerReceiveSide(partners[j], d) != receive_side) {
+        continue;
+      }
+      combined.add(partners[j]);
+      used[j] = true;
+    }
+    squeezed_partners.push_back(combined);
+  }
+
+  return squeezed_partners;
+}
 
 struct ForwardFieldLayout {
   const rbmd::Real* source[kMaxForwardFields]{};
@@ -520,7 +647,7 @@ void AppendTrackedGidPresenceRows(const ExchangeRouteTraceConfig& cfg,
 }
 
 std::vector<int> ExtractTrackedCountsFromLeavingBuffer(
-    const char* device_ptr, int bytes, int atom_count,
+    const char* device_ptr, std::size_t bytes, int atom_count,
     const std::vector<rbmd::Id>& tracked_gids) {
   std::vector<int> counts(tracked_gids.size(), 0);
   if (!device_ptr || bytes <= 0 || atom_count <= 0 || tracked_gids.empty()) {
@@ -608,7 +735,7 @@ std::vector<int> ExtractTrackedCountsFromLeavingBuffer(
 }
 
 std::vector<int> ExtractTrackedCountsFromHaloBuffer(
-    const char* device_ptr, int bytes, int atom_count,
+    const char* device_ptr, std::size_t bytes, int atom_count,
     const std::vector<rbmd::Id>& tracked_gids) {
   std::vector<int> counts(tracked_gids.size(), 0);
   if (!device_ptr || bytes <= 0 || atom_count <= 0 || tracked_gids.empty()) {
@@ -825,7 +952,7 @@ void AppendExchangeRouteRows(const ExchangeRouteTraceConfig& cfg, rbmd::Id step,
                              uint32_t epoch, unsigned short dim,
                              bool leaving_phase, MessageType msg_type,
                              const char* direction, int rank, int peer_rank,
-                             int atom_count, int byte_count,
+                             int atom_count, std::size_t byte_count,
                              const std::vector<int>& gid_counts) {
   if (!cfg.route_enabled || cfg.gids.empty()) {
     return;
@@ -906,16 +1033,13 @@ void IndirectNeighbourCommunicationScheme::CaptureGhostPhase(
   thrust::copy_n(_device_data->_d_py.begin(), total_atoms, py.begin());
   thrust::copy_n(_device_data->_d_pz.begin(), total_atoms, pz.begin());
 
-  std::unordered_map<rbmd::Id, std::vector<size_t>> local_indices;
-  local_indices.reserve(static_cast<size_t>(total_atoms));
-  for (size_t i = 0; i < static_cast<size_t>(total_atoms); ++i) {
-    local_indices[ids[i]].push_back(i);
-  }
+  const HostAtomIdChains local_indices(ids);
 
   for (size_t i = 0; i < neighbours.size(); ++i) {
     auto& pending = stage[i];
     auto& partner = neighbours[i];
     pending.rank = partner.getRank();
+    pending.receive_side = PartnerReceiveSide(partner, d);
     if (pending.rank == domainDecomp->_current_rank) {
       continue;
     }
@@ -941,22 +1065,11 @@ void IndirectNeighbourCommunicationScheme::CaptureGhostPhase(
     }
 
     const char* send_buffer = partner.GetSendBufferPtr(HALO_COPIES);
-    pending.send_ids =
-        CopyDeviceBufferColumn<rbmd::Id>(send_buffer, 0, send_count);
-    const size_t send_position_offset =
-        static_cast<size_t>(send_count) * sizeof(rbmd::Id) * 2;
-    const auto send_px = CopyDeviceBufferColumn<rbmd::Real>(
-        send_buffer, send_position_offset, send_count);
-    const auto send_py = CopyDeviceBufferColumn<rbmd::Real>(
-        send_buffer,
-        send_position_offset + static_cast<size_t>(send_count) *
-                                   sizeof(rbmd::Real),
-        send_count);
-    const auto send_pz = CopyDeviceBufferColumn<rbmd::Real>(
-        send_buffer,
-        send_position_offset + static_cast<size_t>(send_count) *
-                                   sizeof(rbmd::Real) * 2,
-        send_count);
+    auto send = CopyGhostCoordinates(send_buffer, send_count);
+    pending.send_ids = std::move(send.ids);
+    const auto& send_px = send.x;
+    const auto& send_py = send.y;
+    const auto& send_pz = send.z;
     pending.shift_x.resize(static_cast<size_t>(send_count));
     pending.shift_y.resize(static_cast<size_t>(send_count));
     pending.shift_z.resize(static_cast<size_t>(send_count));
@@ -964,14 +1077,15 @@ void IndirectNeighbourCommunicationScheme::CaptureGhostPhase(
     pending.send_reference_y.resize(static_cast<size_t>(send_count));
     pending.send_reference_z.resize(static_cast<size_t>(send_count));
     for (int j = 0; j < send_count; ++j) {
-      const auto found = local_indices.find(pending.send_ids[j]);
-      if (found == local_indices.end() || found->second.empty()) {
+      const auto first = local_indices.Find(pending.send_ids[j]);
+      if (first == HostAtomIdChains::missing) {
         _pending_forward_valid = false;
         return;
       }
-      size_t source = found->second.front();
+      size_t source = first;
       rbmd::Real best_distance = std::numeric_limits<rbmd::Real>::max();
-      for (const size_t candidate : found->second) {
+      for (size_t candidate = first; candidate != HostAtomIdChains::missing;
+           candidate = local_indices.Next(candidate)) {
         const rbmd::Real dx = send_px[j] - px[candidate];
         const rbmd::Real dy = send_py[j] - py[candidate];
         const rbmd::Real dz = send_pz[j] - pz[candidate];
@@ -990,22 +1104,11 @@ void IndirectNeighbourCommunicationScheme::CaptureGhostPhase(
     }
 
     const char* recv_buffer = partner.GetRecvBufferPtr(HALO_COPIES);
-    pending.recv_ids =
-        CopyDeviceBufferColumn<rbmd::Id>(recv_buffer, 0, recv_count);
-    const size_t recv_position_offset =
-        static_cast<size_t>(recv_count) * sizeof(rbmd::Id) * 2;
-    pending.recv_reference_x = CopyDeviceBufferColumn<rbmd::Real>(
-        recv_buffer, recv_position_offset, recv_count);
-    pending.recv_reference_y = CopyDeviceBufferColumn<rbmd::Real>(
-        recv_buffer,
-        recv_position_offset + static_cast<size_t>(recv_count) *
-                                   sizeof(rbmd::Real),
-        recv_count);
-    pending.recv_reference_z = CopyDeviceBufferColumn<rbmd::Real>(
-        recv_buffer,
-        recv_position_offset + static_cast<size_t>(recv_count) *
-                                   sizeof(rbmd::Real) * 2,
-        recv_count);
+    auto received = CopyGhostCoordinates(recv_buffer, recv_count);
+    pending.recv_ids = std::move(received.ids);
+    pending.recv_reference_x = std::move(received.x);
+    pending.recv_reference_y = std::move(received.y);
+    pending.recv_reference_z = std::move(received.z);
     pending.recv_retained.assign(static_cast<size_t>(recv_count), 0);
   }
 }
@@ -1049,8 +1152,9 @@ bool IndirectNeighbourCommunicationScheme::PrepareGhostCoordinateExchange(
     return false;
   }
 
+  const rbmd::Id native_atoms = moleculeContainer->_native_atoms_num;
   const rbmd::Id total_atoms = moleculeContainer->_total_atoms_num;
-  if (total_atoms < 0 ||
+  if (native_atoms < 0 || native_atoms > total_atoms || total_atoms < 0 ||
       _device_data->_d_atoms_id.size() < static_cast<size_t>(total_atoms)) {
     return false;
   }
@@ -1062,22 +1166,19 @@ bool IndirectNeighbourCommunicationScheme::PrepareGhostCoordinateExchange(
   thrust::copy_n(_device_data->_d_px.begin(), total_atoms, px.begin());
   thrust::copy_n(_device_data->_d_py.begin(), total_atoms, py.begin());
   thrust::copy_n(_device_data->_d_pz.begin(), total_atoms, pz.begin());
-  std::unordered_map<rbmd::Id, std::vector<rbmd::Id>> indices_by_id;
-  indices_by_id.reserve(static_cast<size_t>(total_atoms));
-  for (rbmd::Id i = 0; i < total_atoms; ++i) {
-    indices_by_id[ids[static_cast<size_t>(i)]].push_back(i);
-  }
+  const HostAtomIdChains indices_by_id(ids);
 
   const auto closest_index = [&](rbmd::Id gid, rbmd::Real ref_x,
                                  rbmd::Real ref_y, rbmd::Real ref_z) {
-    const auto found = indices_by_id.find(gid);
-    if (found == indices_by_id.end() || found->second.empty()) {
+    const auto first = indices_by_id.Find(gid);
+    if (first == HostAtomIdChains::missing) {
       return rbmd::Id(-1);
     }
-    rbmd::Id best = found->second.front();
+    rbmd::Id best = static_cast<rbmd::Id>(first);
     rbmd::Real best_distance = std::numeric_limits<rbmd::Real>::max();
-    for (const rbmd::Id candidate : found->second) {
-      const std::size_t idx = static_cast<std::size_t>(candidate);
+    for (std::size_t idx = first; idx != HostAtomIdChains::missing;
+         idx = indices_by_id.Next(idx)) {
+      const rbmd::Id candidate = static_cast<rbmd::Id>(idx);
       const rbmd::Real dx = px[idx] - ref_x;
       const rbmd::Real dy = py[idx] - ref_y;
       const rbmd::Real dz = pz[idx] - ref_z;
@@ -1100,6 +1201,7 @@ bool IndirectNeighbourCommunicationScheme::PrepareGhostCoordinateExchange(
       }
       ForwardPeer peer;
       peer.rank = pending.rank;
+      peer.receive_side = pending.receive_side;
       std::vector<rbmd::Id> send_indices(pending.send_ids.size());
       for (size_t i = 0; i < pending.send_ids.size(); ++i) {
         if (i >= pending.send_reference_x.size() ||
@@ -1130,17 +1232,10 @@ bool IndirectNeighbourCommunicationScheme::PrepareGhostCoordinateExchange(
         recv_indices[i] = closest_index(
             pending.recv_ids[i], pending.recv_reference_x[i],
             pending.recv_reference_y[i], pending.recv_reference_z[i]);
-        if (recv_indices[i] < 0) {
+        if (recv_indices[i] < native_atoms || recv_indices[i] >= total_atoms) {
           InvalidateGhostCoordinateExchange();
           return false;
         }
-      }
-      if (send_indices.size() >
-              static_cast<size_t>(std::numeric_limits<int>::max() / 3) ||
-          recv_indices.size() >
-              static_cast<size_t>(std::numeric_limits<int>::max() / 3)) {
-        InvalidateGhostCoordinateExchange();
-        return false;
       }
       peer.send_indices = thrust::device_vector<rbmd::Id>(
           send_indices.begin(), send_indices.end());
@@ -1152,6 +1247,12 @@ bool IndirectNeighbourCommunicationScheme::PrepareGhostCoordinateExchange(
           pending.shift_y.begin(), pending.shift_y.end());
       peer.shift_z = thrust::device_vector<rbmd::Real>(
           pending.shift_z.begin(), pending.shift_z.end());
+      // Coordinate reuse always exchanges x/y/z. Allocate its persistent
+      // payload storage while the plan is built so the first forward pass does
+      // not allocate while independent non-blocking streams are active.
+      constexpr std::size_t kCoordinateFieldCount = 3;
+      peer.send_values.resize(send_indices.size() * kCoordinateFieldCount);
+      peer.recv_values.resize(recv_indices.size() * kCoordinateFieldCount);
       target_stage.emplace_back(std::move(peer));
     }
   }
@@ -1165,16 +1266,40 @@ void IndirectNeighbourCommunicationScheme::ForwardGhostCoordinates(
                      domainDecomp);
 }
 
+void IndirectNeighbourCommunicationScheme::ForwardGhostScalar(
+    thrust::device_vector<rbmd::Real>& values, LinkedCell* moleculeContainer,
+    DomainDecomposition* domainDecomp) {
+  // Every rank participates, including empty subdomains. A rank-local early
+  // return would strand its neighbors. Direct traversal builds its plan here.
+  int ready = _forward_coordinates_valid ||
+              PrepareGhostCoordinateExchange(moleculeContainer);
+  if (!moleculeContainer ||
+      values.size() != static_cast<std::size_t>(moleculeContainer->_total_atoms_num)) {
+    ready = 0;
+  }
+  int all_ready = 0;
+  MPI_CHECK(MPI_Allreduce(&ready, &all_ready, 1, MPI_INT, MPI_MIN,
+                          domainDecomp->_mpi_comm));
+  if (!all_ready) {
+    throw std::runtime_error("Cannot prepare EAM scalar halo exchange on all ranks");
+  }
+  ForwardGhostFields(ForwardGhostState::EamEmbeddingDerivative,
+                     moleculeContainer, domainDecomp, &values);
+}
+
 void IndirectNeighbourCommunicationScheme::ForwardGhostFields(
     ForwardGhostState state, LinkedCell* moleculeContainer,
-    DomainDecomposition* domainDecomp) {
+    DomainDecomposition* domainDecomp,
+    thrust::device_vector<rbmd::Real>* scalar) {
   if (!_forward_coordinates_valid || moleculeContainer == nullptr ||
       domainDecomp == nullptr || !_device_data) {
     throw std::runtime_error(
         "Three-stage forward ghost exchange plan is not valid");
   }
 
-  const ForwardFieldLayout layout = MakeForwardFieldLayout(state, _device_data);
+  ForwardFieldLayout layout;
+  if (scalar) layout.Add(*scalar);  // Scalars have no periodic position shift.
+  else layout = MakeForwardFieldLayout(state, _device_data);
   constexpr int kForwardCoordinateTagBase = 29400;
   for (unsigned short d = 0; d < GetCommDims(); ++d) {
     auto& stage = _forward_stages[d];
@@ -1182,23 +1307,17 @@ void IndirectNeighbourCommunicationScheme::ForwardGhostFields(
     requests.reserve(stage.size() * 2);
     for (auto& peer : stage) {
       const std::size_t recv_count = peer.recv_indices.size();
-      if (recv_count >
-          static_cast<std::size_t>(std::numeric_limits<int>::max() /
-                                   layout.count)) {
-        throw std::overflow_error("Forward ghost receive bundle is too large");
-      }
       peer.recv_values.resize(recv_count *
                               static_cast<std::size_t>(layout.count));
       if (peer.recv_values.empty()) {
         continue;
       }
-      MPI_Request request = MPI_REQUEST_NULL;
-      MPI_CHECK(MPI_Irecv(thrust::raw_pointer_cast(peer.recv_values.data()),
-                          static_cast<int>(peer.recv_values.size()),
+      rbmd::mpi::IrecvChunks(thrust::raw_pointer_cast(peer.recv_values.data()),
+                          peer.recv_values.size(),
                           MPI_RBMD_REAL, peer.rank,
-                          kForwardCoordinateTagBase + d,
-                          domainDecomp->_mpi_comm, &request));
-      requests.push_back(request);
+                          kForwardCoordinateTagBase +
+                              2 * static_cast<int>(d) + peer.receive_side,
+                          domainDecomp->_mpi_comm, requests);
     }
 
     for (auto& peer : stage) {
@@ -1207,11 +1326,6 @@ void IndirectNeighbourCommunicationScheme::ForwardGhostFields(
       if (count <= 0) {
         peer.send_values.clear();
         continue;
-      }
-      if (peer.send_indices.size() >
-          static_cast<std::size_t>(std::numeric_limits<int>::max() /
-                                   layout.count)) {
-        throw std::overflow_error("Forward ghost send bundle is too large");
       }
       peer.send_values.resize(peer.send_indices.size() *
                               static_cast<std::size_t>(layout.count));
@@ -1234,25 +1348,36 @@ void IndirectNeighbourCommunicationScheme::ForwardGhostFields(
           thrust::make_counting_iterator<rbmd::Id>(count),
           pack);
     }
-    CHECK_RUNTIME(DEVICESYNC());
+    // Coordinate pack runs on the default stream. Its reuse path may overlap a
+    // native-only kernel on a non-blocking stream, so wait only for the pack.
+    if (state == ForwardGhostState::Coordinates) {
+      CHECK_RUNTIME(STREAM_SYNC(nullptr));
+    } else {
+      CHECK_RUNTIME(DEVICESYNC());
+    }
 
     for (auto& peer : stage) {
       if (peer.send_values.empty()) {
         continue;
       }
-      MPI_Request request = MPI_REQUEST_NULL;
-      MPI_CHECK(MPI_Isend(thrust::raw_pointer_cast(peer.send_values.data()),
-                          static_cast<int>(peer.send_values.size()),
+      rbmd::mpi::IsendChunks(thrust::raw_pointer_cast(peer.send_values.data()),
+                          peer.send_values.size(),
                           MPI_RBMD_REAL, peer.rank,
-                          kForwardCoordinateTagBase + d,
-                          domainDecomp->_mpi_comm, &request));
-      requests.push_back(request);
+                          kForwardCoordinateTagBase +
+                              2 * static_cast<int>(d) +
+                              OppositeReceiveSide(peer.receive_side),
+                          domainDecomp->_mpi_comm, requests);
     }
     if (!requests.empty()) {
-      MPI_CHECK(MPI_Waitall(static_cast<int>(requests.size()), requests.data(),
-                            MPI_STATUSES_IGNORE));
+      rbmd::mpi::WaitChunks(requests);
     }
-    CHECK_RUNTIME(DEVICESYNC());
+    // MPI_Waitall is the completion fence for GPU-aware receive buffers. For
+    // coordinate reuse, avoid synchronizing unrelated non-blocking streams.
+    if (state == ForwardGhostState::Coordinates) {
+      CHECK_RUNTIME(STREAM_SYNC(nullptr));
+    } else {
+      CHECK_RUNTIME(DEVICESYNC());
+    }
 
     for (auto& peer : stage) {
       const rbmd::Id count =
@@ -1275,14 +1400,20 @@ void IndirectNeighbourCommunicationScheme::ForwardGhostFields(
           apply);
     }
     // 下一维可能立即转发本维刚更新的 ghost，因此维度之间必须完成同步。
-    CHECK_RUNTIME(DEVICESYNC());
+    // Apply also runs on the default stream; coordinate reuse only needs that
+    // stream complete before the next dimension packs the updated ghosts.
+    if (state == ForwardGhostState::Coordinates) {
+      CHECK_RUNTIME(STREAM_SYNC(nullptr));
+    } else {
+      CHECK_RUNTIME(DEVICESYNC());
+    }
   }
 }
 
 void IndirectNeighbourCommunicationScheme::packPhaseBuffers(
     unsigned short d, Phase phase, MessageType msgType,
     LinkedCell* moleculeContainer, DomainDecomposition* domainDecomp,
-    std::vector<int>& sendCounts, std::vector<int>& sendBytes) {
+    std::vector<int>& sendCounts, std::vector<std::size_t>& sendBytes) {
   auto& neighbours = (*_neighbours)[d];
   const int neighbourCount = static_cast<int>(neighbours.size());
   sendCounts.assign(neighbourCount, 0);
@@ -1321,15 +1452,12 @@ void IndirectNeighbourCommunicationScheme::packPhaseBuffers(
                            0, end_idx, staged_mask);
     sendCounts[i] = partner.GetSendCount(msgType);
     const auto bytes = partner.GetSendBytes(msgType);
-    if (bytes > std::numeric_limits<int>::max()) {
-      throw std::runtime_error("MPI 发送缓冲区超过 int 上限，需调整协议实现。");
-    }
-    sendBytes[i] = static_cast<int>(bytes);
+    sendBytes[i] = bytes;
   }
 }
 
 void IndirectNeighbourCommunicationScheme::allocateRecvBuffers(
-    unsigned short d, Phase phase, const std::vector<int>& recvBytes) {
+    unsigned short d, Phase phase, const std::vector<std::size_t>& recvBytes) {
   auto& neighbours = (*_neighbours)[d];
   MessageType msgType = PhaseToMessageType(phase);
   for (int i = 0; i < static_cast<int>(neighbours.size()); ++i) {
@@ -1362,7 +1490,7 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
     MPI_Comm_get_attr(domainDecomp->_mpi_comm, MPI_TAG_UB, &tagUbPtr, &flag);
     if (flag && tagUbPtr != nullptr) {
       const int maxTagCandidate =
-          _tags.PayloadTag(GetCommDims() - 1, Phase::Halo, 1);
+          _tags.PayloadTag(GetCommDims() - 1, Phase::Halo, 1, 1);
       if (maxTagCandidate > *tagUbPtr) {
         std::ostringstream oss;
         oss << "MPI tag 上限不足，所需 tag=" << maxTagCandidate
@@ -1374,7 +1502,7 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
     tagChecked = true;
   }
 
-  std::vector<int> sendBytes;
+  std::vector<std::size_t> sendBytes;
   packPhaseBuffers(d, phase, msgType, moleculeContainer, domainDecomp,
                    result.send_counts, sendBytes);
   result.send_bytes = sendBytes;
@@ -1396,7 +1524,7 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
 
   auto extract_partner_gid_counts = [&](bool is_send, int partner_idx,
                                         int atom_count,
-                                        int byte_count) -> std::vector<int> {
+                                        std::size_t byte_count) -> std::vector<int> {
     std::vector<int> gid_counts(route_cfg.gids.size(), 0);
     if ((!trace_route && !collect_tracked_send_counts &&
          !collect_tracked_send_peers) ||
@@ -1433,7 +1561,7 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
           result.send_counts.size() > static_cast<size_t>(i)
               ? result.send_counts[i]
               : 0;
-      const int byte_count =
+      const std::size_t byte_count =
           sendBytes.size() > static_cast<size_t>(i) ? sendBytes[i] : 0;
       const auto gid_counts =
           extract_partner_gid_counts(true, i, atom_count, byte_count);
@@ -1475,7 +1603,7 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
   }
 
   auto trace_partner_buffer = [&](bool is_send, int partner_idx,
-                                  int atom_count, int byte_count) {
+                                  int atom_count, std::size_t byte_count) {
     if (!trace_route || route_cfg.gids.empty()) {
       return;
     }
@@ -1502,8 +1630,8 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
   headerRecvs.reserve(neighbourCount);
   headerSends.reserve(neighbourCount);
 
-  const int headerTag = _tags.HeaderTag(d, phase, _epoch);
-  const int payloadTag = _tags.PayloadTag(d, phase, _epoch);
+  const int headerTag = _tags.HeaderTag(d, phase, _epoch, 0);
+  const int payloadTag = _tags.PayloadTag(d, phase, _epoch, 0);
 
   // === DEBUG: 打印 tag 信息，验证唯一性 ===
   int current_rank = -1;
@@ -1527,9 +1655,11 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
       continue;
     }
     MPI_Request req{};
+    const int receive_side = PartnerReceiveSide(partner, d);
     MPI_Irecv(reinterpret_cast<char*>(&recvHeaders[i]), sizeof(Header),
-              MPI_BYTE, partner.getRank(), headerTag, domainDecomp->_mpi_comm,
-              &req);
+              MPI_BYTE, partner.getRank(),
+              _tags.HeaderTag(d, phase, _epoch, receive_side),
+              domainDecomp->_mpi_comm, &req);
     headerRecvs.push_back(req);
   }
 
@@ -1545,9 +1675,12 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
       continue;
     }
     MPI_Request req{};
+    const int send_side =
+        OppositeReceiveSide(PartnerReceiveSide(partner, d));
     MPI_Isend(reinterpret_cast<char*>(&sendHeaders[i]), sizeof(Header),
-              MPI_BYTE, partner.getRank(), headerTag, domainDecomp->_mpi_comm,
-              &req);
+              MPI_BYTE, partner.getRank(),
+              _tags.HeaderTag(d, phase, _epoch, send_side),
+              domainDecomp->_mpi_comm, &req);
     headerSends.push_back(req);
   }
 
@@ -1561,7 +1694,7 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
   }
 
   result.recv_counts.assign(neighbourCount, 0);
-  std::vector<int> recvBytes(neighbourCount, 0);
+  std::vector<std::size_t> recvBytes(neighbourCount, 0);
   for (int i = 0; i < neighbourCount; ++i) {
     result.recv_counts[i] = recvHeaders[i].count;
     recvBytes[i] = recvHeaders[i].nbytes;
@@ -1580,15 +1713,15 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
     if (domainDecomp->_current_rank == partner.getRank()) {
       continue;
     }
-    const int bytes = recvBytes[i];
+    const std::size_t bytes = recvBytes[i];
     if (bytes <= 0) {
       continue;
     }
     char* recvPtr = partner.GetRecvBufferPtr(msgType);
-    MPI_Request req{};
-    MPI_Irecv(recvPtr, bytes, MPI_BYTE, partner.getRank(), payloadTag,
-              domainDecomp->_mpi_comm, &req);
-    payloadRecvs.push_back(req);
+    const int receive_side = PartnerReceiveSide(partner, d);
+    rbmd::mpi::IrecvChunks(recvPtr, bytes, MPI_BYTE, partner.getRank(),
+              _tags.PayloadTag(d, phase, _epoch, receive_side),
+              domainDecomp->_mpi_comm, payloadRecvs);
   }
 
   for (int i = 0; i < neighbourCount; ++i) {
@@ -1596,25 +1729,24 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
     if (domainDecomp->_current_rank == partner.getRank()) {
       continue;
     }
-    const int bytes = sendBytes[i];
+    const std::size_t bytes = sendBytes[i];
     if (bytes <= 0) {
       partner.ClearSendBuffer();
       continue;
     }
     char* sendPtr = partner.GetSendBufferPtr(msgType);
-    MPI_Request req{};
-    MPI_Isend(sendPtr, bytes, MPI_BYTE, partner.getRank(), payloadTag,
-              domainDecomp->_mpi_comm, &req);
-    payloadSends.push_back(req);
+    const int send_side =
+        OppositeReceiveSide(PartnerReceiveSide(partner, d));
+    rbmd::mpi::IsendChunks(sendPtr, bytes, MPI_BYTE, partner.getRank(),
+              _tags.PayloadTag(d, phase, _epoch, send_side),
+              domainDecomp->_mpi_comm, payloadSends);
   }
 
   if (!payloadRecvs.empty()) {
-    MPI_Waitall(static_cast<int>(payloadRecvs.size()), payloadRecvs.data(),
-                MPI_STATUSES_IGNORE);
+    rbmd::mpi::WaitChunks(payloadRecvs);
   }
   if (!payloadSends.empty()) {
-    MPI_Waitall(static_cast<int>(payloadSends.size()), payloadSends.data(),
-                MPI_STATUSES_IGNORE);
+    rbmd::mpi::WaitChunks(payloadSends);
   }
 
   if (trace_route) {
@@ -1623,7 +1755,7 @@ IndirectNeighbourCommunicationScheme::exchangePhaseP2P(
           result.recv_counts.size() > static_cast<size_t>(i)
               ? result.recv_counts[i]
               : 0;
-      const int byte_count =
+      const std::size_t byte_count =
           recvBytes.size() > static_cast<size_t>(i) ? recvBytes[i] : 0;
       trace_partner_buffer(false, i, atom_count, byte_count);
     }
@@ -1730,8 +1862,11 @@ void IndirectNeighbourCommunicationScheme::exchangeMoleculesMPI(
                            "IndirectNeighbourCommunicationScheme::exchange");
   ++_epoch;
   InvalidateGhostCoordinateExchange();
-  _capture_forward_coordinates =
-      moleculeContainer != nullptr && moleculeContainer->_skin > rbmd::Real(0);
+  // The forward plan is also required by distributed SHAKE within the
+  // current step.  It is not only a neighbour-cache optimization: skin == 0
+  // rebuilds the halo every step, but SHAKE still has to forward predicted
+  // and corrected ghost state after that rebuild.
+  _capture_forward_coordinates = moleculeContainer != nullptr;
   _pending_forward_valid = _capture_forward_coordinates;
   _pending_forward_stages.clear();
   _pending_forward_stages.resize(GetCommDims());
@@ -1758,9 +1893,9 @@ void IndirectNeighbourCommunicationScheme::exchangeMoleculesMPI(
   long long halo_send_bytes = 0;
   long long halo_recv_bytes = 0;
 
-  auto sum_int_vector = [](const std::vector<int>& values) -> long long {
+  auto sum_int_vector = [](const auto& values) -> long long {
     long long total_value = 0;
-    for (const int value : values) {
+    for (const auto value : values) {
       if (value > 0) {
         total_value += static_cast<long long>(value);
       }
@@ -2070,7 +2205,10 @@ void IndirectNeighbourCommunicationScheme::exchangeMoleculesMPI(
 
     auto native_begin = thrust::make_zip_iterator(thrust::make_tuple(
         _device_data->_d_vx.begin(), _device_data->_d_vy.begin(),
-        _device_data->_d_vz.begin()));
+        _device_data->_d_vz.begin(),
+        _device_data->_d_flagX.begin(), _device_data->_d_flagY.begin(),
+        _device_data->_d_flagZ.begin(), _device_data->_d_unwarp_px.begin(),
+        _device_data->_d_unwarp_py.begin(), _device_data->_d_unwarp_pz.begin()));
     auto native_end = native_begin + native;
     thrust::remove_if(native_begin, native_end,
                       mask_begin, thrust::identity<int>());
@@ -2194,7 +2332,9 @@ void IndirectNeighbourCommunicationScheme::initCommunicationPartners(
   _fullShellNeighbours = commPartners;
   convert1StageTo3StageNeighbours(commPartners, (*_neighbours), cutoffRadius);
   for (unsigned int d = 0; d < _commDimms; d++) {
-    (*_neighbours)[d] = NeighborAcquirer::squeezePartners((*_neighbours)[d]);
+    // Keep opposite periodic sides independent even when both map to one rank.
+    (*_neighbours)[d] =
+        SqueezePartnersByDirection((*_neighbours)[d], d);
   }
 }
 

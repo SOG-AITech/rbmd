@@ -1,4 +1,5 @@
 #pragma once
+#include "common/atom_index_map.h"
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
@@ -61,7 +62,17 @@ class LinkedCell {
   thrust::device_vector<Cell> _cells{};
   // 存储邻居
   thrust::device_vector<rbmd::Id> _neighbor_cell{};
-  thrust::device_vector<rbmd::Id> _atom_id_to_idx{};
+  thrust::device_vector<rbmd::Id> _atom_id_keys{};
+  thrust::device_vector<rbmd::LocalAtomIndex> _atom_id_indices{};
+  rbmd::AtomIndexMapView AtomIndexMap() const {
+    return {thrust::raw_pointer_cast(_atom_id_keys.data()),
+            thrust::raw_pointer_cast(_atom_id_indices.data()),
+            _atom_id_keys.size()};
+  }
+  void RebuildAtomIndexMap();
+  // 最近一次物理重排的 inverse permutation：old index -> new index。
+  // 通信层用它在 GPU 上更新持久化 ghost plan，避免按 ID 回到 CPU 重建。
+  thrust::device_vector<rbmd::Id> _last_sort_old_to_new{};
   rbmd::Real _cutoff = 0;
   rbmd::Real _skin = 0;
   rbmd::Real _neighbor_cutoff = 0;
@@ -70,6 +81,9 @@ class LinkedCell {
   thrust::device_vector<rbmd::Id> _per_atom_cell_id{};
   thrust::device_vector<rbmd::Id> _cell_sorted_cell_id{};
   thrust::device_vector<rbmd::Id> _cell_sorted_atom_indices{};
+  thrust::device_vector<rbmd::Real> _cell_sorted_px{};
+  thrust::device_vector<rbmd::Real> _cell_sorted_py{};
+  thrust::device_vector<rbmd::Real> _cell_sorted_pz{};
   __host__ void Build();
 
   LinkedCellDeviceDataPtr* GetDataPtr();

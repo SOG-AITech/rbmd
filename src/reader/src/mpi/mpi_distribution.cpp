@@ -1,3 +1,4 @@
+#include "core/replicate_atoms.h"
 #include "mpi/mpi_distribution.h"
 #include <algorithm>
 #include <array>
@@ -16,6 +17,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <type_traits>
 #include <vector>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -467,26 +469,22 @@ void BroadcastDihedralCoefficients(ParsedSnapshot& snapshot, int rank) {
 
   std::vector<rbmd::Id> types(
       static_cast<std::size_t>(std::max<rbmd::Id>(count, 0)));
-  std::vector<rbmd::Real> values(types.size() * 7);
+  std::vector<rbmd::Real> values(types.size() * 3);
 
   if (rank == 0) {
     std::size_t index = 0;
     for (const auto& entry : snapshot.dihedral_coeffs) {
       types[index] = entry.first;
-      values[index * 7] = entry.second.k;
-      values[index * 7 + 1] = entry.second.sign;
-      values[index * 7 + 2] = entry.second.multiplicity;
-      values[index * 7 + 3] = entry.second.k1;
-      values[index * 7 + 4] = entry.second.k2;
-      values[index * 7 + 5] = entry.second.k3;
-      values[index * 7 + 6] = entry.second.k4;
+      values[index * 3] = entry.second.k;
+      values[index * 3 + 1] = entry.second.sign;
+      values[index * 3 + 2] = entry.second.multiplicity;
       ++index;
     }
   }
 
   MPI_Bcast(count > 0 ? types.data() : nullptr, static_cast<int>(count),
             MPI_RBMD_ID, 0, Comm());
-  MPI_Bcast(count > 0 ? values.data() : nullptr, static_cast<int>(count * 7),
+  MPI_Bcast(count > 0 ? values.data() : nullptr, static_cast<int>(count * 3),
             MPI_RBMD_REAL, 0, Comm());
 
   if (rank != 0) {
@@ -495,13 +493,9 @@ void BroadcastDihedralCoefficients(ParsedSnapshot& snapshot, int rank) {
       snapshot.dihedral_coeffs[types[static_cast<std::size_t>(i)]] =
           ParsedSnapshot::DihedralCoeff{
               types[static_cast<std::size_t>(i)],
-              values[static_cast<std::size_t>(i * 7)],
-              values[static_cast<std::size_t>(i * 7 + 1)],
-              values[static_cast<std::size_t>(i * 7 + 2)],
-              values[static_cast<std::size_t>(i * 7 + 3)],
-              values[static_cast<std::size_t>(i * 7 + 4)],
-              values[static_cast<std::size_t>(i * 7 + 5)],
-              values[static_cast<std::size_t>(i * 7 + 6)]};
+              values[static_cast<std::size_t>(i * 3)],
+              values[static_cast<std::size_t>(i * 3 + 1)],
+              values[static_cast<std::size_t>(i * 3 + 2)]};
     }
   }
 }
@@ -676,20 +670,6 @@ AtomPartition ScatterAtoms(ParsedSnapshot& snapshot, int rank, int size) {
                                "local_count=" + std::to_string(local_count));
 
   MPI_Type_free(&mpi_atom_type);
-
-  rbmd::Id assignment_count = 0;
-  if (rank == 0) {
-    assignment_count = static_cast<rbmd::Id>(partition.atom_ids.size());
-  }
-  MPI_Bcast(&assignment_count, 1, MPI_RBMD_ID, 0, Comm());
-  partition.atom_ids.resize(static_cast<std::size_t>(assignment_count));
-  partition.owners.resize(static_cast<std::size_t>(assignment_count));
-  MPI_Bcast(partition.atom_ids.empty() ? nullptr : partition.atom_ids.data(),
-            static_cast<int>(assignment_count), MPI_RBMD_ID, 0, Comm());
-  MPI_Bcast(partition.owners.empty() ? nullptr : partition.owners.data(),
-            static_cast<int>(assignment_count), MPI_INT, 0, Comm());
-  rbmd::debug::StartupPhaseLog(
-      "reader.mpi.scatter_atoms.after_assignment_bcast");
 
   snapshot.atoms.clear();
   snapshot.atoms.reserve(static_cast<std::size_t>(std::max(local_count, 0)));
@@ -1102,7 +1082,6 @@ struct StreamCtx::Impl {
   std::vector<std::vector<ImproperPacket>> improper_buffers;
   SpatialGrid spatial;
   std::vector<rbmd::Id> atom_counts;
-  std::vector<std::pair<rbmd::Id, int>> assignments;
   std::unordered_map<rbmd::Id, int> owner_lookup;
   std::vector<int> owner_audit_cart_map;
   bool first_atom_logged = false;
@@ -1379,7 +1358,10 @@ void AppendStartupOwnerAuditRow(StreamCtx& ctx,
 
 }  // namespace
 
-StreamCtx BeginStreaming(ParsedSnapshot& snapshot, rbmd::Id expected_atoms) {
+StreamCtx BeginStreaming(ParsedSnapshot& snapshot, rbmd::Id expected_atoms,
+                         const ParsedSnapshot* replicated_seed,
+                         std::array<std::size_t, 3> factors,
+                         bool bond_periodic) {
   StreamCtx ctx;
   ctx.snapshot = &snapshot;
 
@@ -1433,6 +1415,61 @@ StreamCtx BeginStreaming(ParsedSnapshot& snapshot, rbmd::Id expected_atoms) {
   ctx.partition.atom_ids.clear();
   ctx.partition.owners.clear();
 
+  int generate = ctx.is_root && replicated_seed ? 1 : 0;
+  MPI_Bcast(&generate, 1, MPI_INT, 0, Comm());
+  if (generate) {
+    // Only the seed cell is replicated in memory; expanded atoms are generated
+    // independently on their spatial owner. No O(Nglobal) owner directory.
+    ParsedSnapshot seed;
+    if (ctx.is_root) seed = *replicated_seed;
+    BroadcastBox(seed, ctx.rank);
+    rbmd::Id metadata[5] = {};
+    if (ctx.is_root) {
+      metadata[0] = replication::CheckedIdAdd(0, seed.atoms.size(), "seed atom count");
+      for (int d = 0; d < 3; ++d)
+        metadata[d + 1] = replication::CheckedIdAdd(0, factors[d], "replica factor");
+      metadata[4] = bond_periodic ? 1 : 0;
+    }
+    MPI_Bcast(metadata, 5, MPI_RBMD_ID, 0, Comm());
+    seed.atoms.resize(static_cast<std::size_t>(metadata[0]));
+    for (int d = 0; d < 3; ++d) factors[d] = static_cast<std::size_t>(metadata[d + 1]);
+    // ParsedSnapshot::Atom is trivially copyable; all ranks use the same binary.
+    static_assert(std::is_trivially_copyable<ParsedSnapshot::Atom>::value);
+    auto* bytes = reinterpret_cast<char*>(seed.atoms.data());
+    const auto byte_count = replication::CheckedMultiply(seed.atoms.size(), sizeof(ParsedSnapshot::Atom), "seed bytes");
+    for (std::size_t offset = 0; offset < byte_count;) {
+      const auto n = std::min<std::size_t>(1u << 26, byte_count - offset);
+      MPI_Bcast(bytes + offset, static_cast<int>(n), MPI_BYTE, 0, Comm());
+      offset += n;
+    }
+    std::size_t id_span = 0;
+    for (const auto& atom : seed.atoms)
+      id_span = std::max(id_span, static_cast<std::size_t>(replication::CheckedIdAdd(atom.id, 1, "seed ID span")));
+    const auto replicas = replication::CheckedMultiply(replication::CheckedMultiply(factors[0], factors[1], "replicas"), factors[2], "replicas");
+    if (replicas > 0 && id_span > 0)
+      replication::CheckedIdAdd(static_cast<rbmd::Id>(id_span - 1), replication::CheckedMultiply(replicas - 1, id_span, "replica IDs"), "replica IDs");
+    std::array<int, 3> coords{};
+    for (int x = 0; x < streaming_spatial.dims[0]; ++x)
+      for (int y = 0; y < streaming_spatial.dims[1]; ++y)
+        for (int z = 0; z < streaming_spatial.dims[2]; ++z)
+          if (ResolveOwnerFromCoords(streaming_spatial, streaming_spatial.coord_to_rank_map, {x,y,z}) == ctx.rank)
+            coords = {x,y,z};
+    snapshot.atoms.clear();
+    snapshot.atoms.reserve(static_cast<std::size_t>(safe_total / ctx.size));
+    replication::ForEachLocalReplica(seed, snapshot.box, factors,
+        streaming_spatial.dims, coords, id_span, metadata[4] != 0, ctx.rank,
+        [&](const ParsedSnapshot::Atom& atom) { return DetermineOwner(streaming_spatial, atom); },
+        [&](const ParsedSnapshot::Atom& atom) { snapshot.atoms.push_back(atom); });
+    const rbmd::Id local_count = static_cast<rbmd::Id>(snapshot.atoms.size());
+    rbmd::Id generated_count = 0;
+    MPI_Allreduce(&local_count, &generated_count, 1, MPI_RBMD_ID, MPI_SUM, Comm());
+    if (generated_count != total_atoms)
+      throw std::runtime_error("Distributed replication atom count mismatch");
+    ctx.generated_locally = true;
+    ctx.active = false;
+    return ctx;
+  }
+
   snapshot.atoms.clear();
   snapshot.bonds.clear();
   snapshot.angles.clear();
@@ -1464,11 +1501,9 @@ StreamCtx BeginStreaming(ParsedSnapshot& snapshot, rbmd::Id expected_atoms) {
     ctx.impl->spatial = std::move(streaming_spatial);
     ctx.impl->owner_audit_cart_map = std::move(startup_owner_audit_cart_map);
     ctx.impl->atom_counts.assign(static_cast<std::size_t>(ctx.size), 0);
-    ctx.impl->assignments.clear();
     ctx.impl->owner_lookup.clear();
     const auto expected =
         static_cast<std::size_t>(std::max<rbmd::Id>(safe_total, 0));
-    ctx.impl->assignments.reserve(expected);
     ctx.impl->owner_lookup.reserve(expected);
   }
   rbmd::debug::StartupPhaseLog("reader.mpi.begin_streaming.end",
@@ -1505,7 +1540,6 @@ void StreamAtom(StreamCtx& ctx, const ParsedSnapshot::Atom& atom) {
         "id=" + std::to_string(static_cast<long long>(atom.id)) +
             " owner=" + std::to_string(owner));
   }
-  ctx.impl->assignments.emplace_back(atom.id, owner);
   ctx.impl->owner_lookup[atom.id] = owner;
   AppendStartupOwnerAuditRow(ctx, atom, owner);
   if (!ctx.impl->atom_counts.empty()) {
@@ -1769,7 +1803,7 @@ void StreamImproper(StreamCtx& ctx, const ParsedSnapshot::Improper& improper) {
 }
 
 void ReceiveLoop(StreamCtx& ctx) {
-  if (!IsEnabled() || ctx.rank == 0 || !ctx.snapshot) {
+  if (!IsEnabled() || ctx.rank == 0 || !ctx.snapshot || ctx.generated_locally) {
     return;
   }
 
@@ -1953,56 +1987,17 @@ void EndStreaming(StreamCtx& ctx) {
 
   if (ctx.is_root && ctx.impl) {
     EnsureImpropersClosed(ctx);
-    ctx.partition.offsets.resize(static_cast<std::size_t>(ctx.size) + 1);
-    rbmd::Id prefix = 0;
-    if (!ctx.partition.offsets.empty()) {
-      ctx.partition.offsets[0] = 0;
-      for (int i = 0; i < ctx.size; ++i) {
-        const auto index = static_cast<std::size_t>(i);
-        const rbmd::Id count = index < ctx.impl->atom_counts.size()
-                                   ? ctx.impl->atom_counts[index]
-                                   : static_cast<rbmd::Id>(0);
-        prefix += count;
-        ctx.partition.offsets[index + 1] = prefix;
-      }
-    }
-    auto& assignments = ctx.impl->assignments;
-    std::sort(
-        assignments.begin(), assignments.end(),
-        [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
-    // 验证排序结果（调试模式）
-    assert(std::is_sorted(assignments.begin(), assignments.end(),
-                          [](const auto& lhs, const auto& rhs) {
-                            return lhs.first < rhs.first;
-                          }));
-
-    ctx.partition.atom_ids.resize(assignments.size());
-    ctx.partition.owners.resize(assignments.size());
-    for (std::size_t i = 0; i < assignments.size(); ++i) {
-      ctx.partition.atom_ids[i] = assignments[i].first;
-      ctx.partition.owners[i] = assignments[i].second;
-    }
   }
 
-  ctx.partition.offsets.resize(static_cast<std::size_t>(ctx.size) + 1);
-  if (!ctx.partition.offsets.empty()) {
-    MPI_Bcast(ctx.partition.offsets.data(),
-              static_cast<int>(ctx.partition.offsets.size()), MPI_RBMD_ID, 0,
-              Comm());
-  }
-
-  rbmd::Id assignment_count =
-      ctx.is_root ? static_cast<rbmd::Id>(ctx.partition.atom_ids.size())
-                  : static_cast<rbmd::Id>(0);
-  MPI_Bcast(&assignment_count, 1, MPI_RBMD_ID, 0, Comm());
-  ctx.partition.atom_ids.resize(static_cast<std::size_t>(assignment_count));
-  ctx.partition.owners.resize(static_cast<std::size_t>(assignment_count));
-  MPI_Bcast(
-      ctx.partition.atom_ids.empty() ? nullptr : ctx.partition.atom_ids.data(),
-      static_cast<int>(assignment_count), MPI_RBMD_ID, 0, Comm());
-  MPI_Bcast(
-      ctx.partition.owners.empty() ? nullptr : ctx.partition.owners.data(),
-      static_cast<int>(assignment_count), MPI_INT, 0, Comm());
+  // Count metadata is O(ranks). Atom ownership is never broadcast.
+  const rbmd::Id local_count = static_cast<rbmd::Id>(ctx.snapshot->atoms.size());
+  std::vector<rbmd::Id> counts(static_cast<std::size_t>(ctx.size));
+  MPI_Allgather(&local_count, 1, MPI_RBMD_ID, counts.data(), 1, MPI_RBMD_ID, Comm());
+  ctx.partition.offsets.assign(static_cast<std::size_t>(ctx.size) + 1, 0);
+  for (int i = 0; i < ctx.size; ++i)
+    ctx.partition.offsets[i + 1] = ctx.partition.offsets[i] + counts[i];
+  ctx.impl.reset();
+  ctx.local_index.clear();
 
   const int rank = Rank();
   BroadcastMasses(*ctx.snapshot, rank);
@@ -2086,7 +2081,8 @@ int Size() { return 1; }
 
 void DistributeSnapshot(ParsedSnapshot&) {}
 
-StreamCtx BeginStreaming(ParsedSnapshot& snapshot, rbmd::Id) {
+StreamCtx BeginStreaming(ParsedSnapshot& snapshot, rbmd::Id,
+                         const ParsedSnapshot*, std::array<std::size_t, 3>, bool) {
   StreamCtx ctx;
   ctx.snapshot = &snapshot;
   ctx.rank = 0;

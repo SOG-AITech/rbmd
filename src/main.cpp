@@ -25,6 +25,7 @@ int main(int argc, char* argv[]) {
     std::shared_ptr<Application> app =
         std::make_shared<MDApplication>(argc, argv);
     app->Run();
+    app.reset();  // Destroy HIP and MPI-backed state before MPI_Finalize.
 
 #ifdef USE_MPI
     MPI_Finalize();

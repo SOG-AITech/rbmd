@@ -47,7 +47,7 @@ __device__ __forceinline__ rbmd::Real ApplyShiftAndClamp(
  * 对齐 LAMMPS AtomVecFullKokkos_PackExchangeFunctor::operator()
  * 每个线程处理一个要发送的原子
  *
- * 新增：d_shift_x/y/z 为 per-send-atom 的位移数组（可为 nullptr），
+ * 新增：d_shift_x/y/z 为 per-source-atom 的位移数组（可为 nullptr），
  *       box_min/box_max 为全局盒子边界，用于 shift 后的边界钳位。
  *       这样做避免了在 pack 前原地修改 _d_px/py/pz 导致跨维度坐标污染。
  */
@@ -59,6 +59,7 @@ __global__ void PackExchangeTopologyKernel(
     const rbmd::Real* d_vx, const rbmd::Real* d_vy, const rbmd::Real* d_vz,
     const rbmd::Id* d_id, const rbmd::Id* d_type, const rbmd::Id* d_molecule,
     const rbmd::Real* d_charge,
+    const rbmd::Id* d_image_x, const rbmd::Id* d_image_y, const rbmd::Id* d_image_z,
     // Bond 数据
     const int* d_num_bond, const int* d_bond_type, const rbmd::Id* d_bond_atom,
     int bond_per_atom,
@@ -107,11 +108,11 @@ __global__ void PackExchangeTopologyKernel(
 
   // [1-3] 坐标（在 pack 内部应用 shift + clamping，不污染源数据）
   if (d_shift_x != nullptr) {
-    mybuf[m++] = ApplyShiftAndClamp(d_px[i], d_shift_x[mysend],
+    mybuf[m++] = ApplyShiftAndClamp(d_px[i], d_shift_x[i],
                                      box_min_x, box_max_x);
-    mybuf[m++] = ApplyShiftAndClamp(d_py[i], d_shift_y[mysend],
+    mybuf[m++] = ApplyShiftAndClamp(d_py[i], d_shift_y[i],
                                      box_min_y, box_max_y);
-    mybuf[m++] = ApplyShiftAndClamp(d_pz[i], d_shift_z[mysend],
+    mybuf[m++] = ApplyShiftAndClamp(d_pz[i], d_shift_z[i],
                                      box_min_z, box_max_z);
   } else {
     mybuf[m++] = d_px[i];
@@ -130,7 +131,21 @@ __global__ void PackExchangeTopologyKernel(
 	  mybuf[m++] = ubuf(static_cast<int64_t>(d_molecule[i])).d;
 	  mybuf[m++] = d_charge[i];
 
-	  // [11+] Bond 数据：num_bond + bonds
+  const rbmd::Real lengths[3] = {box_max_x - box_min_x, box_max_y - box_min_y, box_max_z - box_min_z};
+  const rbmd::Real shifts[3] = {d_shift_x ? d_shift_x[i] : rbmd::Real(0),
+                               d_shift_y ? d_shift_y[i] : rbmd::Real(0),
+                               d_shift_z ? d_shift_z[i] : rbmd::Real(0)};
+  rbmd::Id images[3] = {d_image_x[i], d_image_y[i], d_image_z[i]};
+  // Preserve physical position when the migration route applies a periodic shift.
+  for (int dim = 0; dim < 3; ++dim) {
+    images[dim] -= static_cast<rbmd::Id>(ROUND(shifts[dim] / lengths[dim]));
+    mybuf[m++] = ubuf(static_cast<int64_t>(images[dim])).d;
+  }
+  for (int dim = 0; dim < 3; ++dim) {
+    mybuf[m++] = mybuf[1 + dim] + images[dim] * lengths[dim];
+  }
+
+	  // Bond 数据：num_bond + bonds
 	  int num_bond_i = ClampCountToCapacity(d_num_bond[i], bond_per_atom);
 	  mybuf[m++] = ubuf(static_cast<int64_t>(num_bond_i)).d;
 	  for (int k = 0; k < num_bond_i; k++) {
@@ -213,6 +228,8 @@ __global__ void UnpackExchangeTopologyKernel(
     rbmd::Real* d_px, rbmd::Real* d_py, rbmd::Real* d_pz, rbmd::Real* d_vx,
     rbmd::Real* d_vy, rbmd::Real* d_vz, rbmd::Id* d_id, rbmd::Id* d_type,
     rbmd::Id* d_molecule, rbmd::Real* d_charge,
+    rbmd::Id* d_image_x, rbmd::Id* d_image_y, rbmd::Id* d_image_z,
+    rbmd::Real* d_ux, rbmd::Real* d_uy, rbmd::Real* d_uz,
     // Bond 数据
     int* d_num_bond, int* d_bond_type, rbmd::Id* d_bond_atom, int bond_per_atom,
     // Angle 数据
@@ -260,6 +277,12 @@ __global__ void UnpackExchangeTopologyKernel(
   d_type[i] = static_cast<rbmd::Id>(ubuf(mybuf[m++]).i);
   d_molecule[i] = static_cast<rbmd::Id>(ubuf(mybuf[m++]).i);
   d_charge[i] = mybuf[m++];
+  d_image_x[i] = static_cast<rbmd::Id>(ubuf(mybuf[m++]).i);
+  d_image_y[i] = static_cast<rbmd::Id>(ubuf(mybuf[m++]).i);
+  d_image_z[i] = static_cast<rbmd::Id>(ubuf(mybuf[m++]).i);
+  d_ux[i] = mybuf[m++];
+  d_uy[i] = mybuf[m++];
+  d_uz[i] = mybuf[m++];
 
   // Bond 数据
   int num_bond_i = ClampCountToCapacity(
@@ -355,7 +378,7 @@ void op::PackExchangeTopologyOp<device::DEVICE_GPU>::operator()(
       // 基础属性
       params.d_px, params.d_py, params.d_pz, params.d_vx, params.d_vy,
       params.d_vz, params.d_id, params.d_type, params.d_molecule,
-      params.d_charge,
+      params.d_charge, params.d_image_x, params.d_image_y, params.d_image_z,
       // Bond
       params.d_num_bond, params.d_bond_type, params.d_bond_atom,
       params.bond_per_atom,
@@ -377,8 +400,6 @@ void op::PackExchangeTopologyOp<device::DEVICE_GPU>::operator()(
       params.box_min[0], params.box_min[1], params.box_min[2],
       params.box_max[0], params.box_max[1], params.box_max[2]);
 
-  // 同步以确保 kernel 完成（可选，根据需要）
-  CHECK_RUNTIME(DEVICESYNC());
 }
 
 void op::UnpackExchangeTopologyOp<device::DEVICE_GPU>::operator()(
@@ -394,7 +415,8 @@ void op::UnpackExchangeTopologyOp<device::DEVICE_GPU>::operator()(
       // 基础属性
       params.d_px, params.d_py, params.d_pz, params.d_vx, params.d_vy,
       params.d_vz, params.d_id, params.d_type, params.d_molecule,
-      params.d_charge,
+      params.d_charge, params.d_image_x, params.d_image_y, params.d_image_z,
+      params.d_ux, params.d_uy, params.d_uz,
       // Bond
       params.d_num_bond, params.d_bond_type, params.d_bond_atom,
       params.bond_per_atom,

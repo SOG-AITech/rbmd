@@ -1,3 +1,4 @@
+#include "common/revision_diagnostics.h"
 #include "nose_hoover_controller.h"
 
 // #include <thrust/device_ptr.h>
@@ -779,6 +780,7 @@ void NoseHooverController::NHCTempIntegrate()
 
     _factor_eta = EXP(-ncfac * _dthalf * _eta_dot[0]);
 
+    rbmd::revision::ThermostatWork revision_work;
     //nh_v_temp();  Update of dt/2
     if (_com_bias) {
       //1: remove-bias
@@ -807,6 +809,7 @@ void NoseHooverController::NHCTempIntegrate()
         thrust::raw_pointer_cast(_device_data->_d_vy.data()),
         thrust::raw_pointer_cast(_device_data->_d_vz.data()));
     }
+    revision_work.Finish();
     // rescale temperature due to velocity scaling
      _temperature = _temperature * _factor_eta * _factor_eta;
 

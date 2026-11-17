@@ -1,8 +1,12 @@
 #include "TrajectoryOutput.h"
+#include "RegularGzipStream.hpp"
+#include "SelectedTrajectoryOutput.h"
 
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <cmath>
+#include <iomanip>
 #include <experimental/filesystem>
 #include <fstream>
 #include <limits>
@@ -29,7 +33,10 @@ std::string SafeCurrentPath() {
 }
 
 bool OpenOutputFile(std::ofstream& file, const std::string& path,
-                    std::ios::openmode mode) {
+                    std::ios::openmode mode,
+                    std::unique_ptr<RegularGzipStream>* compressor = nullptr,
+                    bool gzip_output = false,
+                    std::uint64_t output_limit = std::numeric_limits<std::uint64_t>::max()) {
   try {
     const auto status = fs::symlink_status(path);
     if (fs::exists(status) && !fs::is_regular_file(status)) {
@@ -50,6 +57,11 @@ bool OpenOutputFile(std::ofstream& file, const std::string& path,
     Logger::Instance().error("Failed to open output file '{}' in cwd '{}'.", path,
                              SafeCurrentPath());
     return false;
+  }
+  if (gzip_output) {
+    if (!compressor) throw std::runtime_error("Missing gzip stream owner");
+    try { *compressor = std::make_unique<RegularGzipStream>(file, 1, output_limit); }
+    catch (const std::exception& e) { Logger::Instance().error("gzip output init failed: {}", e.what()); file.close(); return false; }
   }
   return true;
 }
@@ -202,6 +214,7 @@ TrajectoryOutput::~TrajectoryOutput() {
     destroy_s = std::chrono::duration<double>(tx1 - tx0).count();
   }
 
+  if (_mpi_compressor) { _mpi_compressor->Finish(); _mpi_compressor.reset(); }
   if (_mpi_trj_file.is_open()) {
     _mpi_trj_file.close();
   }
@@ -237,7 +250,31 @@ void TrajectoryOutput::Init() {
     return;
   }
 
+  if (config->PathExists({"outputs", "trajectory_out", "selection"}) ||
+      config->PathExists({"outputs", "trajectory_out", "fields"})) {
+    _selected_output = std::make_unique<SelectedTrajectoryOutput>();
+    _selected_output->Init();
+    _initialized = true;
+    return;
+  }
+
   _interval = config->Get<rbmd::Id>("interval", "outputs", "trajectory_out");
+  _trajectory_first_step = 0;
+  _trajectory_last_step = std::numeric_limits<rbmd::Id>::max();
+  if (config->PathExists({"outputs", "trajectory_out", "first_step"}))
+    _trajectory_first_step = config->Get<rbmd::Id>("first_step", "outputs", "trajectory_out");
+  if (config->PathExists({"outputs", "trajectory_out", "last_step"}))
+    _trajectory_last_step = config->Get<rbmd::Id>("last_step", "outputs", "trajectory_out");
+  if (_trajectory_first_step < 0 || _trajectory_last_step < _trajectory_first_step)
+    throw std::runtime_error("Invalid trajectory first_step/last_step");
+  _gzip_output = config->PathExists({"outputs", "trajectory_out", "gzip"}) &&
+    config->Get<bool>("gzip", "outputs", "trajectory_out");
+  _trajectory_byte_limit = std::numeric_limits<std::uint64_t>::max();
+  if (config->PathExists({"outputs", "trajectory_out", "max_compressed_bytes"})) {
+    const auto limit = config->Get<rbmd::Id>("max_compressed_bytes", "outputs", "trajectory_out");
+    if (limit < 64) throw std::runtime_error("trajectory max_compressed_bytes too small");
+    _trajectory_byte_limit = static_cast<std::uint64_t>(limit);
+  }
   _num_atoms = CurrentLocalAtomCount();
 
 #ifdef USE_MPI
@@ -253,10 +290,45 @@ void TrajectoryOutput::Init() {
   }
 
   if (_mpi_root_only_mode) {
+    _szz_only = config->PathExists({"outputs", "trajectory_out", "szz_only"}) &&
+        config->Get<bool>("szz_only", "outputs", "trajectory_out");
+    if (_szz_only) {
+      _szz_final_step = config->Get<rbmd::Id>("num_steps", "execution");
+      if (_interval <= 0 || _szz_final_step % _interval != 0)
+        throw std::runtime_error("Szz final step must be a multiple of interval");
+      int ok = 1;
+      if (rbmd::mpi::ShouldWriteRootOnlyOutput()) {
+        ok = OpenOutputFile(_szz_file, "szz.csv", std::ios::out | std::ios::trunc);
+        _szz_file << "step,qnorm,lx,ly,lz";
+        for (int n=1; n<=4; ++n) for (char a : {'x','y','z'}) _szz_file << ',' << a << n;
+        _szz_file << '\n' << std::setprecision(17);
+      }
+      MPI_Bcast(&ok, 1, MPI_INT, 0, MPI_COMM_WORLD);
+      if (!ok) throw std::runtime_error("Cannot open Szz output");
+      _initialized = true;
+      return;
+    }
+    rbmd::GlobalCount local_count = static_cast<rbmd::GlobalCount>(_num_atoms);
+    rbmd::GlobalCount global_count = 0;
+    MPI_Allreduce(&local_count, &global_count, 1, MPI_LONG_LONG, MPI_SUM, MPI_COMM_WORLD);
+    _mpi_sharded_mode = global_count > std::numeric_limits<int>::max();
+    if (config->PathExists({"outputs", "trajectory_out", "mpi_sharded"}))
+      _mpi_sharded_mode = _mpi_sharded_mode || config->Get<bool>("mpi_sharded", "outputs", "trajectory_out");
+    if (_mpi_sharded_mode) {
+      int rank = 0;
+      MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+      int ok = OpenOutputFile(_mpi_trj_file,
+          "rbmd.rank" + std::to_string(rank) + ".trj", std::ios::out | std::ios::trunc, &_mpi_compressor, _gzip_output, _trajectory_byte_limit);
+      int all_ok = 0;
+      MPI_Allreduce(&ok, &all_ok, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+      if (!all_ok) throw std::runtime_error("Could not open trajectory shard on all ranks");
+      _initialized = true;
+      return;
+    }
     int file_open_ok = 1;
     if (rbmd::mpi::ShouldWriteRootOnlyOutput()) {
       file_open_ok = OpenOutputFile(_mpi_trj_file, "rbmd.trj",
-                                    std::ios::out | std::ios::trunc)
+                                    std::ios::out | std::ios::trunc, &_mpi_compressor, _gzip_output, _trajectory_byte_limit)
                          ? 1
                          : 0;
     }
@@ -273,6 +345,9 @@ void TrajectoryOutput::Init() {
   }
 #endif
 
+  if (config->PathExists({"outputs", "trajectory_out", "szz_only"}) &&
+      config->Get<bool>("szz_only", "outputs", "trajectory_out"))
+    throw std::runtime_error("Szz scalar output currently requires multiple MPI ranks");
   if (_num_atoms == 0) {
     Logger::Instance().warn(
         "TrajectoryOutput::Init called with 0 atoms. Output will be disabled.");
@@ -341,7 +416,7 @@ void TrajectoryOutput::AllocateRingBuffer(size_t num_atoms) {
                              num_atoms * sizeof(rbmd::Id)));
     CHECK_RUNTIME(MALLOCHOST(reinterpret_cast<void**>(&frame.h_charge),
                              num_atoms * sizeof(rbmd::Real)));
-    CHECK_RUNTIME(MALLOCHOST(reinterpret_cast<void**>(&frame.h_atom_id_to_idx),
+    CHECK_RUNTIME(MALLOCHOST(reinterpret_cast<void**>(&frame.h_atoms_id),
                              num_atoms * sizeof(rbmd::Id)));
     CHECK_RUNTIME(NEW_FLAG_EVENT(&frame.copy_complete_event, EVENT_DISABLE));
   }
@@ -361,7 +436,7 @@ void TrajectoryOutput::DeallocateRingBuffer() {
     CHECK_RUNTIME(FREE_PINNED_HOST(frame.h_atoms_type));
     CHECK_RUNTIME(EVENT_DESTORY(frame.copy_complete_event));
     CHECK_RUNTIME(FREE_PINNED_HOST(frame.h_charge));
-    CHECK_RUNTIME(FREE_PINNED_HOST(frame.h_atom_id_to_idx));
+    CHECK_RUNTIME(FREE_PINNED_HOST(frame.h_atoms_id));
   }
   _ring_buffer.clear();
 }
@@ -513,6 +588,59 @@ void TrajectoryOutput::ExecuteMpiRootOnly(rbmd::Id current_timestep) {
       local_box._coord_min[0], local_box._coord_min[1], local_box._coord_min[2],
       local_box._coord_max[0], local_box._coord_max[1], local_box._coord_max[2]};
 
+  if (_szz_only) {
+    rbmd::Real low[3], high[3];
+    MPI_Allreduce(local_bounds.data(), low, 3, MPI_RBMD_REAL, MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(local_bounds.data()+3, high, 3, MPI_RBMD_REAL, MPI_MAX, MPI_COMM_WORLD);
+    double sums[25] = {}, total[25] = {};
+    const std::vector<rbmd::Real>* coords[3] = {&_mpi_local_frame.px, &_mpi_local_frame.py, &_mpi_local_frame.pz};
+    for (size_t i=0; i<local_num_atoms; ++i) {
+      const double q = _mpi_local_frame.charge[i];
+      sums[24] += q*q;
+      for (int a=0; a<3; ++a) {
+        const double phase = 2*std::acos(-1.0)*(double((*coords[a])[i])-low[a])/(double(high[a])-low[a]);
+        const double c=std::cos(phase), s=std::sin(phase);
+        double cn=c, sn=s;
+        for (int n=0; n<4; ++n) {
+          const int j=2*(3*n+a);
+          sums[j] += q*cn; sums[j+1] += q*sn;
+          const double next=cn*c-sn*s; sn=sn*c+cn*s; cn=next;
+        }
+      }
+    }
+    MPI_Allreduce(sums, total, 25, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    if (!(total[24]>0)) throw std::runtime_error("Szz requires nonzero charge norm");
+    if (rbmd::mpi::ShouldWriteRootOnlyOutput()) {
+      _szz_file << current_timestep << ',' << total[24];
+      for (int a=0; a<3; ++a) _szz_file << ',' << double(high[a])-low[a];
+      for (int j=0; j<24; j+=2) _szz_file << ',' << (total[j]*total[j]+total[j+1]*total[j+1])/total[24];
+      _szz_file << '\n'; _szz_file.flush();
+      if (!_szz_file.good()) throw std::runtime_error("Szz write failed");
+    }
+    // Preserve only the final coordinates and velocities for a future continuation.
+    if (current_timestep == _szz_final_step) {
+      int rank=0; MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+      std::ofstream final_frame;
+      int ok=OpenOutputFile(final_frame, "final.rank"+std::to_string(rank)+".trj", std::ios::out|std::ios::trunc), all_ok=0;
+      MPI_Allreduce(&ok,&all_ok,1,MPI_INT,MPI_MIN,MPI_COMM_WORLD);
+      if (!all_ok) throw std::runtime_error("Cannot write final Szz snapshot");
+      std::vector<rbmd::Real> bounds{low[0],low[1],low[2],high[0],high[1],high[2]};
+      WriteGatheredFrame(final_frame,current_timestep,BuildGlobalBoxFromLocalBounds(bounds,local_box),_mpi_local_frame);
+      final_frame.flush();
+      if (!final_frame.good()) throw std::runtime_error("Final Szz snapshot write failed");
+    }
+    return;
+  }
+  if (_mpi_sharded_mode) {
+    rbmd::Real low[3], high[3];
+    MPI_Allreduce(local_bounds.data(), low, 3, MPI_RBMD_REAL, MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(local_bounds.data() + 3, high, 3, MPI_RBMD_REAL, MPI_MAX, MPI_COMM_WORLD);
+    std::vector<rbmd::Real> bounds{low[0], low[1], low[2], high[0], high[1], high[2]};
+    const Box global_box = BuildGlobalBoxFromLocalBounds(bounds, local_box);
+    WriteGatheredFrame(_mpi_trj_file, current_timestep, global_box, _mpi_local_frame);
+    return;
+  }
+
   const bool is_root = rbmd::mpi::ShouldWriteRootOnlyOutput();
   const int local_count = static_cast<int>(local_num_atoms);
 
@@ -613,9 +741,16 @@ void TrajectoryOutput::ExecuteMpiRootOnly(rbmd::Id current_timestep) {
 }
 
 void TrajectoryOutput::Execute(rbmd::Id current_timestep) {
+  if (_selected_output) {
+    _selected_output->Execute(current_timestep);
+    return;
+  }
   if (!_initialized || _interval <= 0 || current_timestep % _interval != 0) {
     return;
   }
+
+  if (current_timestep != 0 && (current_timestep < _trajectory_first_step ||
+      current_timestep > _trajectory_last_step)) return;
 
   if (_mpi_root_only_mode) {
     ExecuteMpiRootOnly(current_timestep);
@@ -666,9 +801,8 @@ void TrajectoryOutput::Execute(rbmd::Id current_timestep) {
                              raw_ptr(_device_data->_d_charge), pos_bytes, D2H,
                              _stream));
   CHECK_RUNTIME(MEMCPY_ASYNC(
-      target_frame.h_atom_id_to_idx,
-      raw_ptr(
-          LinkedCellLocator::GetInstance().GetLinkedCell()->_atom_id_to_idx),
+      target_frame.h_atoms_id,
+      raw_ptr(_device_data->_d_atoms_id),
       type_bytes, D2H, _stream));
 
   // Record an event in the stream
@@ -681,7 +815,8 @@ void TrajectoryOutput::Execute(rbmd::Id current_timestep) {
 
 void TrajectoryOutput::OutputWorker() {
   std::ofstream trj_file;
-  if (!OpenOutputFile(trj_file, "rbmd.trj", std::ios::out | std::ios::trunc)) {
+  std::unique_ptr<RegularGzipStream> compressor;
+  if (!OpenOutputFile(trj_file, "rbmd.trj", std::ios::out | std::ios::trunc, &compressor, _gzip_output, _trajectory_byte_limit)) {
     return;
   }
   const size_t buffer_size = EstimateOptimalBufferSize(CalculateSingleFrameMemory(_num_atoms));
@@ -758,11 +893,11 @@ void TrajectoryOutput::OutputWorker() {
     batch_buffer.reserve(atoms_per_batch * 200);
 
     for (size_t i = 0; i < source_frame.num_atoms; ++i) {
-      const auto idx = source_frame.h_atom_id_to_idx[i];
+      const auto idx = i;
 
       // Use fmt::format for atom data - much cleaner than snprintf
       batch_buffer += fmt::format("{} {} {} {} {} {} {} {} {} {} {} {}\n",
-                                  i + 1,
+                                  source_frame.h_atoms_id[i] + 1,
                                   source_frame.h_atoms_type[idx] + 1,
                                   source_frame.h_charge[idx],
                                   source_frame.h_px[idx],
@@ -794,5 +929,7 @@ void TrajectoryOutput::OutputWorker() {
 
   // Finally flush the buffer
   flush_buffer();
+  if (compressor) { compressor->Finish(); compressor.reset(); }
+  if (!trj_file.good()) throw std::runtime_error("Trajectory stream write failed");
   trj_file.close();
 }

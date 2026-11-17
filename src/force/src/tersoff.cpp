@@ -164,7 +164,7 @@ void TerSoff::ComputeTersoff() {
   auto num_atoms = *(_structure_info_data->_num_atoms);
   thrust::device_vector<rbmd::Real> d_total_energy(1, 0.0);
   auto atom_id_to_idx =
-    LinkedCellLocator::GetInstance().GetLinkedCell()->_atom_id_to_idx;
+    LinkedCellLocator::GetInstance().GetLinkedCell()->AtomIndexMap();
 
   thrust::fill(_device_data->_d_fx.begin(),
   _device_data->_d_fx.end(), 0.0f);
@@ -175,7 +175,7 @@ void TerSoff::ComputeTersoff() {
 
   op::TerSoff<device::DEVICE_GPU>()(
     *_box,d_params,_shift,_cutmax,num_atoms,_nelements,
-    thrust::raw_pointer_cast(atom_id_to_idx.data()),
+    atom_id_to_idx,
     thrust::raw_pointer_cast(_device_data->_d_atoms_id.data()),
     thrust::raw_pointer_cast(_device_data->_d_atoms_type.data()),
     thrust::raw_pointer_cast(_d_map.data()),

@@ -50,6 +50,7 @@ protected:
   void EnsureReplicatedShakeClusters();
   void ZeroShakeCorrections();
   void RunLegacySerialShakeA();
+  void RefreshUnwrappedPositions();
   void RunLegacySerialShakeB();
   void RunReplicatedShakeAKernel();
   void RunReplicatedShakeBKernel();

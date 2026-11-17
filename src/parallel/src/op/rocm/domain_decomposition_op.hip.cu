@@ -13,14 +13,18 @@ __device__ inline bool IsInRegion(const rbmd::Real* d_start_region,
 namespace op {
 __global__ void HandleDomainLeavingAtomsOneDim(
     rbmd::Real* d_start_region, rbmd::Real* d_end_region, rbmd::Real* px,
-    rbmd::Real* py, rbmd::Real* pz, rbmd::Real* pos_to_modify, Box d_box,
+    rbmd::Real* py, rbmd::Real* pz, rbmd::Real* pos_to_modify,
+    rbmd::Id* image_to_modify, rbmd::Real* unwrapped_to_modify, Box d_box,
     rbmd::Id dim, rbmd::Real shift, rbmd::Id total_atoms_num) {
   unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= total_atoms_num) {
     return;
   }
   if (IsInRegion(d_start_region, d_end_region, px[idx], py[idx], pz[idx])) {
+    const rbmd::Real length = d_box._coord_max[dim] - d_box._coord_min[dim];
     pos_to_modify[idx] = pos_to_modify[idx] + shift;
+    // Local periodic wrapping must preserve xu, just like inter-rank migration.
+    image_to_modify[idx] -= static_cast<rbmd::Id>(ROUND(shift / length));
     if (shift < 0) {
       if (pos_to_modify[idx] <= d_box._coord_min[dim]) {
         pos_to_modify[idx] = d_box._coord_min[dim];
@@ -31,6 +35,8 @@ __global__ void HandleDomainLeavingAtomsOneDim(
         pos_to_modify[idx] = NEXTAFTER(r, r - 1.0);
       }
     }
+    unwrapped_to_modify[idx] =
+        pos_to_modify[idx] + image_to_modify[idx] * length;
   }
 }
 
@@ -84,97 +90,6 @@ __global__ void PopulateHalo(rbmd::Real* d_start_region,
   }
 }
 
-
-__global__ void MarkLeavingAtomsInRegion(rbmd::Real* px, rbmd::Real* py,
-                                         rbmd::Real* pz,
-                                         PositionInfo* d_position_infos,
-                                         
-                                         rbmd::Id total_atoms_num,
-                                         int* leaving_flags) {
-  unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx >= total_atoms_num) {
-    return;
-  }
-  int pos_leaving = 0;
-  if (IsInRegion(d_position_infos->_leavingLow,
-                 d_position_infos->_leavingHigh, px[idx], py[idx],
-                 pz[idx])) {
-    pos_leaving++;
-                 }
-
-  leaving_flags[idx] = (pos_leaving > 0) ? 1 : 0;
-}
-
-
-__global__ void ProcessLeavingAtom(rbmd::Real* p_px, rbmd::Real* p_py,
-                                   rbmd::Real* p_pz,
-                                   const PositionInfo* d_position_infos,
-                                   rbmd::Id total_leaving, Box d_domain) { // d_domain 是全局盒子
-  unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx >= total_leaving) {
-    return;
-  }
-  rbmd::Real rx = p_px[idx];
-  rbmd::Real ry = p_py[idx];
-  rbmd::Real rz = p_pz[idx];
-  if (IsInRegion(d_position_infos->_leavingLow,
-                 d_position_infos->_leavingHigh, rx, ry, rz)) {
-
-    // 1. 应用位移 (Apply shift)
-    rx = rx + d_position_infos->_shift[0];
-    ry = ry + d_position_infos->_shift[1];
-    rz = rz + d_position_infos->_shift[2];
-
-    // --- BEGIN FIX ---
-    // 移植 CPU 版本的边界钳位 (clamping) 逻辑
-    // [参考 CommunicationPartner.cpp, line 611-628][cite_start]// 假设 d_domain._coord_min[dim] 总是 0.0 (根据 localbox_info.txt) [cite: 1]
-
-    // 维度 0 (X)
-    if (d_position_infos->_shift[0] < 0) {
-      if (rx < d_domain._coord_min[0]) {
-        rbmd::Real r = d_domain._coord_min[0];
-        rx = NEXTAFTER(r, r + 1.0f);
-      }
-    } else if (d_position_infos->_shift[0] > 0) {
-      if (rx >= d_domain._coord_max[0]) {
-        rbmd::Real r = d_domain._coord_max[0];
-        rx = NEXTAFTER(r, r - 1.0f);
-      }
-    }
-
-    // 维度 1 (Y)
-    if (d_position_infos->_shift[1] < 0) {
-      if (ry < d_domain._coord_min[1]) {
-        rbmd::Real r = d_domain._coord_min[1];
-        ry = NEXTAFTER(r, r + 1.0f);
-      }
-    } else if (d_position_infos->_shift[1] > 0) {
-      if (ry >= d_domain._coord_max[1]) {
-        rbmd::Real r = d_domain._coord_max[1];
-        ry = NEXTAFTER(r, r - 1.0f);
-      }
-    }
-
-    // 维度 2 (Z)
-    if (d_position_infos->_shift[2] < 0) {
-      if (rz < d_domain._coord_min[2]) {
-        rbmd::Real r = d_domain._coord_min[2];
-        rz = NEXTAFTER(r, r + 1.0f);
-      }
-    } else if (d_position_infos->_shift[2] > 0) {
-      if (rz >= d_domain._coord_max[2]) {
-        rbmd::Real r = d_domain._coord_max[2];
-        rz = NEXTAFTER(r, r - 1.0f);
-      }
-    }
-
-    // 2. 写回修复后的坐标
-    p_px[idx] = rx;
-    p_py[idx] = ry;
-    p_pz[idx] = rz;
-    // --- END FIX ---
-                 }
-}
 
 __global__ void MarkHaloAtomsInRegion(rbmd::Real* px, rbmd::Real* py,
                                       rbmd::Real* pz,
@@ -291,12 +206,14 @@ __global__ void CountHaloCandidates(
 
 void op::HandleDomainLeavingAtomsOneDimOp<device::DEVICE_GPU>::operator()(
     rbmd::Real* d_start_region, rbmd::Real* d_end_region, rbmd::Real* px,
-    rbmd::Real* py, rbmd::Real* pz, rbmd::Real* pos_to_modify, Box d_box,
+    rbmd::Real* py, rbmd::Real* pz, rbmd::Real* pos_to_modify,
+    rbmd::Id* image_to_modify, rbmd::Real* unwrapped_to_modify, Box d_box,
     rbmd::Id dim, rbmd::Real shift, rbmd::Id total_atoms_num) {
   unsigned int blocks_per_grid =
       (total_atoms_num + BLOCK_SIZE - 1) / BLOCK_SIZE;
   HandleDomainLeavingAtomsOneDim<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
-      d_start_region, d_end_region, px, py, pz, pos_to_modify, d_box, dim,
+      d_start_region, d_end_region, px, py, pz, pos_to_modify,
+      image_to_modify, unwrapped_to_modify, d_box, dim,
       shift, total_atoms_num);
 }
 
@@ -314,28 +231,6 @@ void op::PopulateHaloOp<device::DEVICE_GPU>::operator()(
       d_start_region, d_end_region, px, py, pz, d_box, halo_px, halo_py,
       halo_pz, counter, max_halo_size, dim, shift, native_atoms_num,
       atoms_id, atoms_type, halo_atoms_id, halo_atoms_type);
-}
-
-void op::MarkLeavingAtomsInRegionOp<device::DEVICE_GPU>::operator()(
-    rbmd::Real* px, rbmd::Real* py, rbmd::Real* pz,
-    PositionInfo* d_position_infos, 
-    rbmd::Id native_atoms_num, int* leaving_flags) {
-  unsigned int blocks_per_grid =
-      (native_atoms_num + BLOCK_SIZE - 1) / BLOCK_SIZE;
-  MarkLeavingAtomsInRegion<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
-      px, py, pz, d_position_infos, native_atoms_num,
-      leaving_flags);
-}
-
-
-void op::ProcessLeavingAtomOp<device::DEVICE_GPU>::operator()(
-    rbmd::Real* p_px, rbmd::Real* p_py,
-    rbmd::Real* p_pz, PositionInfo* d_position_infos,
-     rbmd::Id total_leaving, Box d_domain) {
-  unsigned int blocks_per_grid = (total_leaving + BLOCK_SIZE - 1) / BLOCK_SIZE;
-  ProcessLeavingAtom<<<blocks_per_grid, BLOCK_SIZE>>>(
-      p_px, p_py, p_pz, d_position_infos, total_leaving,
-      d_domain);
 }
 
 void op::MarkHaloAtomsInRegionOp<device::DEVICE_GPU>::operator()(

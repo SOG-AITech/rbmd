@@ -1,19 +1,41 @@
+#include "common/lj_mixing.h"
 //#include <hip/hip_runtime.h>
 
+#include <type_traits>
 #include "../common/rbmd_define.h"
 #include "cvff_op.h"
 #include "model/box.h"
-#include <algorithm>
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <vector>
 #include "../lj_cut_coul_kspace_op/rocm/lj_cut_coul_kspace_op.hip.cu"
 
 const rbmd::Real SMALL = 0.001;
 const rbmd::Real SMALLER = 0.00001;
 namespace op{
+
+__device__ __forceinline__ unsigned int CvffMixRblCounter32(
+    unsigned int value) {
+  value ^= value >> 16;
+  value *= 0x7feb352dU;
+  value ^= value >> 15;
+  value *= 0x846ca68bU;
+  return value ^ (value >> 16);
+}
+
+__device__ __forceinline__ unsigned int CvffFoldRblId32(rbmd::Id value) {
+  const unsigned long long wide = static_cast<unsigned long long>(value);
+  return static_cast<unsigned int>(wide) ^
+         static_cast<unsigned int>(wide >> 32);
+}
+
+__device__ __forceinline__ rbmd::Id CvffRblSystematicStart(
+    rbmd::Id atom_id, rbmd::Id sample_epoch, rbmd::Id candidate_count) {
+  unsigned int key = CvffFoldRblId32(atom_id);
+  key ^= CvffMixRblCounter32(CvffFoldRblId32(sample_epoch) + 0x9e3779b9U);
+  const unsigned int random = CvffMixRblCounter32(key);
+  return static_cast<rbmd::Id>(
+      (static_cast<unsigned long long>(random) *
+       static_cast<unsigned long long>(candidate_count)) >>
+      32);
+}
 
 __global__ void reduce_virial_kernel(
     const rbmd::Id num_atoms,const rbmd::Id pitch,
@@ -109,12 +131,53 @@ inline __device__ rbmd::Real LookupSpecialWeight(unsigned int tid1,
   return rbmd::Real(1.0);
 }
 
+inline __device__ unsigned long long SpecialPartnerBloomBit(rbmd::Id gid) {
+  unsigned long long value =
+      static_cast<unsigned long long>(static_cast<long long>(gid));
+  value ^= value >> 33;
+  value *= 0xff51afd7ed558ccdULL;
+  value ^= value >> 33;
+  return 1ULL << (value & 63ULL);
+}
+
+inline __device__ unsigned long long BuildSpecialPartnerBloom(
+    const rbmd::Id* special_row, int n14) {
+  unsigned long long bloom = 0ULL;
+  if (!special_row || n14 <= 0) {
+    return bloom;
+  }
+  for (int index = 0; index < n14; ++index) {
+    bloom |= SpecialPartnerBloomBit(__ldg(&special_row[index]));
+  }
+  return bloom;
+}
+
+inline __device__ rbmd::Real LookupSpecialWeightFromRow(
+    rbmd::Id gid2, const rbmd::Id* special_row,
+    unsigned long long special_bloom, int n12, int n13, int n14,
+    rbmd::Real w12, rbmd::Real w13, rbmd::Real w14) {
+  if (!special_row || n14 <= 0) {
+    return rbmd::Real(1);
+  }
+  if ((special_bloom & SpecialPartnerBloomBit(gid2)) == 0ULL) {
+    return rbmd::Real(1);
+  }
+  for (int index = 0; index < n14; ++index) {
+    if (__ldg(&special_row[index]) == gid2) {
+      if (index < n12) return w12;
+      if (index < n13) return w13;
+      return w14;
+    }
+  }
+  return rbmd::Real(1);
+}
+
 __global__ void ComputeSpecialLJCutCoulForceUserKernel(
   Box box, const rbmd::Real cut_off, const rbmd::Id num_atoms,const  rbmd::Real qqr2e,
    const rbmd::Real rbsog_sigma,const rbmd::Real rbsog_b, const rbmd::Id rbsog_mmax,
    const rbmd::Real rbsog_w0,const rbmd::Real* taylor_coeff,
    const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
-   const rbmd::Real* sigma, const rbmd::Real* eps,
+   const rbmd::Real* sigma, const rbmd::Real* eps, bool geometric_lj_mixing,
    const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
    const int* nspecial, const rbmd::Id* special, int maxspecial,
    rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
@@ -159,7 +222,7 @@ __global__ void ComputeSpecialLJCutCoulForceUserKernel(
         rbmd::Real charge_j = charge[tid2];
         // mix
         rbmd::Real eps_ij = SQRT(eps_i * eps_j);
-        rbmd::Real sigma_ij = (sigma_i + sigma_j) / 2;
+        rbmd::Real sigma_ij = rbmd::MixLJSigma(sigma_i, sigma_j, geometric_lj_mixing);
         rbmd::Real x2 = px[tid2];
         rbmd::Real y2 = py[tid2];
         rbmd::Real z2 = pz[tid2];
@@ -258,6 +321,16 @@ inline __device__ void LJForceEnergyFromTypePair(
            (lj_force6 * rbmd::Real(1.0 / 12.0)) * r6inv;
 }
 
+template <int THREADS_PER_PARTICLE>
+__device__ __forceinline__ rbmd::Real ReduceParticleGroup(rbmd::Real value) {
+  for (int offset = THREADS_PER_PARTICLE / 2; offset > 0; offset /= 2) {
+    value += SHFL_DOWN_SYNC(0xFFFFFFFF, value, offset,
+                            THREADS_PER_PARTICLE);
+  }
+  return value;
+}
+
+template <int THREADS_PER_PARTICLE>
 __global__ void ComputeSpecialLJCutCoulForce(
      Box box, const rbmd::Real cut_off,
     const rbmd::Id num_atoms, const rbmd::Real alpha, const rbmd::Real qqr2e,
@@ -287,7 +360,10 @@ __global__ void ComputeSpecialLJCutCoulForce(
     sum_virial[i] = 0.0;
   }
 
-  unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
+  const rbmd::Id lane = threadIdx.x % THREADS_PER_PARTICLE;
+  const rbmd::Id group_in_block = threadIdx.x / THREADS_PER_PARTICLE;
+  const rbmd::Id tid1 =
+      blockIdx.x * (blockDim.x / THREADS_PER_PARTICLE) + group_in_block;
   if (tid1 < num_atoms) {
     const rbmd::Id gid1 = atoms_id[tid1];
     rbmd::Id typei = atoms_type[tid1];
@@ -296,7 +372,8 @@ __global__ void ComputeSpecialLJCutCoulForce(
     rbmd::Real y1 = py[tid1];
     rbmd::Real z1 = pz[tid1];
 
-    for (int j = start_id[tid1]; j < end_id[tid1]; ++j) {
+    for (rbmd::Id j = start_id[tid1] + lane; j < end_id[tid1];
+         j += THREADS_PER_PARTICLE) {
       rbmd::Id tid2 = id_verletlist[j];
       if (tid2 == static_cast<rbmd::Id>(tid1)) {
         continue;
@@ -362,13 +439,29 @@ __global__ void ComputeSpecialLJCutCoulForce(
       sum_virial[5] +=local_virial_yz;
     }
 
+  }
+
+  sum_fx = ReduceParticleGroup<THREADS_PER_PARTICLE>(sum_fx);
+  sum_fy = ReduceParticleGroup<THREADS_PER_PARTICLE>(sum_fy);
+  sum_fz = ReduceParticleGroup<THREADS_PER_PARTICLE>(sum_fz);
+  sum_elj = ReduceParticleGroup<THREADS_PER_PARTICLE>(sum_elj);
+  sum_ecoul = ReduceParticleGroup<THREADS_PER_PARTICLE>(sum_ecoul);
+  for (int i = 0; i < 6; ++i) {
+    sum_virial[i] =
+        ReduceParticleGroup<THREADS_PER_PARTICLE>(sum_virial[i]);
+  }
+
+  if (tid1 < num_atoms && lane == 0) {
     fx[tid1] = sum_fx;
     fy[tid1] = sum_fy;
     fz[tid1] = sum_fz;
-    //
-    for(int i =0;i<6;++i) {
-      flat_virial[  i * num_atoms + tid1] = sum_virial[i];
+    for (int i = 0; i < 6; ++i) {
+      flat_virial[i * num_atoms + tid1] = sum_virial[i];
     }
+  }
+  if (lane != 0) {
+    sum_elj = rbmd::Real(0);
+    sum_ecoul = rbmd::Real(0);
   }
 
   rbmd::Real block_sum_elj =
@@ -385,412 +478,365 @@ __global__ void ComputeSpecialLJCutCoulForce(
 }
 
 inline __device__ rbmd::Real LJForceFromTypePair(
-    rbmd::Real distance_2, rbmd::Real lower_cutoff_2,
-    rbmd::Real upper_cutoff_2, rbmd::Real multiplier,
+    rbmd::Real distance_2, rbmd::Real multiplier,
     rbmd::Real lj_force12, rbmd::Real lj_force6) {
-  if (distance_2 <= lower_cutoff_2 || distance_2 >= upper_cutoff_2) {
-    return rbmd::Real(0);
-  }
   const rbmd::Real r2inv = rbmd::Real(1) / distance_2;
   const rbmd::Real r6inv = r2inv * r2inv * r2inv;
   return -multiplier * r2inv * r6inv *
          (lj_force12 * r6inv - lj_force6);
 }
 
+inline __device__ rbmd::Real RblInverseSqrt(rbmd::Real value) {
+#if USE_DOUBLE
+  return rbmd::Real(1) / SQRT(value);
+#else
+  return rsqrtf(value);
+#endif
+}
+
+inline __device__ rbmd::Real RblScreenedCoulombCoefficient(
+    rbmd::Real distance_2, rbmd::Real alpha,
+    const rbmd::Real* __restrict__ table_coeff, rbmd::Real table_r2_min,
+    rbmd::Real table_scale, rbmd::Id table_intervals,
+    rbmd::Real taylor0, rbmd::Real taylor1, rbmd::Real taylor2,
+    rbmd::Real taylor3, rbmd::Real taylor4, rbmd::Real taylor5) {
+  if (distance_2 < table_r2_min) {
+    const rbmd::Real r3inv =
+        (rbmd::Real(1) / distance_2) * RblInverseSqrt(distance_2);
+    const rbmd::Real smooth =
+        (((((taylor5 * distance_2 + taylor4) * distance_2 + taylor3) *
+                distance_2 +
+            taylor2) *
+               distance_2 +
+           taylor1) *
+              distance_2 +
+          taylor0);
+    return r3inv + smooth;
+  }
+  if (table_coeff && table_intervals > 0) {
+    const rbmd::Real position =
+        (distance_2 - table_r2_min) * table_scale;
+    rbmd::Id interval = static_cast<rbmd::Id>(position);
+    interval = interval < table_intervals ? interval : table_intervals - 1;
+    const rbmd::Real local = position - static_cast<rbmd::Real>(interval);
+    const rbmd::Id base = interval * rbmd::Id(4);
+    const rbmd::Real coefficient0 = __ldg(&table_coeff[base + 0]);
+    const rbmd::Real coefficient1 = __ldg(&table_coeff[base + 1]);
+    const rbmd::Real coefficient2 = __ldg(&table_coeff[base + 2]);
+    const rbmd::Real coefficient3 = __ldg(&table_coeff[base + 3]);
+    return ((coefficient0 * local + coefficient1) * local + coefficient2) *
+               local +
+           coefficient3;
+  }
+
+  const rbmd::Real distance = SQRT(distance_2);
+  const rbmd::Real beta = SQRT(alpha);
+  return ERFC(beta * distance) / (distance_2 * distance) +
+         rbmd::Real(2) * beta / SQRT(rbmd::Real(M_PI)) *
+             EXP(-alpha * distance_2) / distance_2;
+}
+
 //RBL : SpecialLJCutCoul
+template <bool FusedCandidateSampling, int THREADS_PER_PARTICLE>
 __global__ void ComputeSpecialLJCutCoulRBLForce(
      Box box, const rbmd::Real rs, const rbmd::Real rc,
     const rbmd::Id num_atoms, const rbmd::Id neighbor_sample_num,
     const rbmd::Id pice_num, const rbmd::Real alpha, const rbmd::Real qqr2e,
-    const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
-    const rbmd::Id lj_num_types, const rbmd::Real* lj_force12,
-    const rbmd::Real* lj_force6, const rbmd::Id* start_id,
-    const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
-    const rbmd::Id* id_random_neighbor, const rbmd::Id* random_neighbor_num,
-    const int* nspecial, const rbmd::Id* special, int maxspecial,
+    const rbmd::Id* __restrict__ atoms_type,
+    const rbmd::Id* __restrict__ atoms_id,
+    const rbmd::Id lj_num_types,
+    const rbmd::Real* __restrict__ lj_force12,
+    const rbmd::Real* __restrict__ lj_force6,
+    const rbmd::Id* __restrict__ start_id,
+    const rbmd::Id* __restrict__ end_id,
+    const rbmd::Id* __restrict__ id_verletlist,
+    const rbmd::Id* __restrict__ id_random_neighbor,
+    const rbmd::Id* __restrict__ random_neighbor_num,
+    const rbmd::Real* __restrict__ random_neighbor_weight,
+    bool,
+    const rbmd::Id* __restrict__ candidate_start,
+    const rbmd::Id* __restrict__ candidate_end,
+    const rbmd::Id* __restrict__ candidate_num,
+    const rbmd::Id* __restrict__ candidate_neighbors,
+    rbmd::Id candidate_capacity, bool candidate_implicit_offsets,
+    rbmd::Id sample_epoch,
+    const rbmd::Real* __restrict__ coulomb_coeff,
+    rbmd::Real table_r2_min, rbmd::Real table_scale,
+    rbmd::Id table_intervals,
+    const rbmd::Real* __restrict__ core_taylor,
+    const int* __restrict__ nspecial,
+    const rbmd::Id* __restrict__ special, int maxspecial,
     rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
-    const rbmd::Real* charge, const rbmd::Real* px, const rbmd::Real* py,
-    const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz) {
+    const rbmd::Real* __restrict__ charge,
+    const rbmd::Real* __restrict__ px,
+    const rbmd::Real* __restrict__ py,
+    const rbmd::Real* __restrict__ pz,
+    rbmd::Real* __restrict__ fx, rbmd::Real* __restrict__ fy,
+    rbmd::Real* __restrict__ fz,
+    rbmd::Real* __restrict__ force_sum) {
+  constexpr bool fused_candidate_sampling = FusedCandidateSampling;
+  __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
+      temp_storage_fx;
+  __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
+      temp_storage_fy;
+  __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
+      temp_storage_fz;
+  (void)neighbor_sample_num;
   rbmd::Real sum_fx = 0;
   rbmd::Real sum_fy = 0;
   rbmd::Real sum_fz = 0;
 
-  unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
+  const rbmd::Id lane = threadIdx.x % THREADS_PER_PARTICLE;
+  const rbmd::Id group_in_block = threadIdx.x / THREADS_PER_PARTICLE;
+  const rbmd::Id tid1 =
+      blockIdx.x * (blockDim.x / THREADS_PER_PARTICLE) + group_in_block;
   if (tid1 < num_atoms) {
-    const rbmd::Id gid1 = atoms_id[tid1];
-    rbmd::Id typei = atoms_type[tid1];
-    rbmd::Real charge_i = charge[tid1];
-    rbmd::Real x1 = px[tid1];
-    rbmd::Real y1 = py[tid1];
-    rbmd::Real z1 = pz[tid1];
-    // rs
-    for (rbmd::Id j = start_id[tid1]; j < end_id[tid1]; ++j) {
-      rbmd::Id tid2 = id_verletlist[j];
+    const rbmd::Id typei = __ldg(&atoms_type[tid1]);
+    const rbmd::Real charge_i = __ldg(&charge[tid1]);
+    const rbmd::Real x1 = __ldg(&px[tid1]);
+    const rbmd::Real y1 = __ldg(&py[tid1]);
+    const rbmd::Real z1 = __ldg(&pz[tid1]);
+    const rbmd::Real rs_2 = rs * rs;
+    const rbmd::Real rc_2 = rc * rc;
+    const rbmd::Real taylor0 = __ldg(&core_taylor[0]);
+    const rbmd::Real taylor1 = __ldg(&core_taylor[1]);
+    const rbmd::Real taylor2 = __ldg(&core_taylor[2]);
+    const rbmd::Real taylor3 = __ldg(&core_taylor[3]);
+    const rbmd::Real taylor4 = __ldg(&core_taylor[4]);
+    const rbmd::Real taylor5 = __ldg(&core_taylor[5]);
+
+    int n12 = 0;
+    int n13 = 0;
+    int n14 = 0;
+    LoadSpecialCounts(tid1, nspecial, maxspecial, n12, n13, n14);
+    const rbmd::Id* special_row =
+        (special && maxspecial > 0)
+            ? special + static_cast<unsigned long long>(tid1) *
+                            static_cast<unsigned long long>(maxspecial)
+            : nullptr;
+    const unsigned long long special_bloom =
+        BuildSpecialPartnerBloom(special_row, n14);
+
+    const rbmd::Id core_begin = __ldg(&start_id[tid1]);
+    const rbmd::Id core_end = __ldg(&end_id[tid1]);
+    for (rbmd::Id j = core_begin + lane; j < core_end;
+         j += THREADS_PER_PARTICLE) {
+      const rbmd::Id tid2 = __ldg(&id_verletlist[j]);
       if (tid2 == static_cast<rbmd::Id>(tid1)) {
         continue;
       }
-      const rbmd::Id gid2 = atoms_id[tid2];
-      rbmd::Id typej = atoms_type[tid2];
-      rbmd::Real charge_j = charge[tid2];
-      const rbmd::Id pair_index = typei * lj_num_types + typej;
-      rbmd::Real x2 = px[tid2];
-      rbmd::Real y2 = py[tid2];
-      rbmd::Real z2 = pz[tid2];
-      rbmd::Real px12 = x2 - x1;
-      rbmd::Real py12 = y2 - y1;
-      rbmd::Real pz12 = z2 - z1;
-      MinImageDistance_while(box, px12, py12, pz12);
-
-      // compute the force_rs
-      rbmd::Real force_coul_rs,force_coul_factor_rs;
-      rbmd::Real fs_ij;
+      rbmd::Real px12 = __ldg(&px[tid2]) - x1;
+      rbmd::Real py12 = __ldg(&py[tid2]) - y1;
+      rbmd::Real pz12 = __ldg(&pz[tid2]) - z1;
+      MinImageDistance_fix(box, px12, py12, pz12);
       const rbmd::Real distance_2 =
           px12 * px12 + py12 * py12 + pz12 * pz12;
-      rbmd::Real force_lj_rs = LJForceFromTypePair(
-          distance_2, EPSILON, rs * rs, rbmd::Real(1),
-          lj_force12[pair_index], lj_force6[pair_index]);
-
-      const rbmd::Real weight =
-          LookupSpecialWeight(tid1, gid2, nspecial, special, maxspecial, w12,
-                              w13, w14);
-      force_lj_rs = weight * force_lj_rs;
-
-      CoulCutForce_rs_fix(rs,alpha,qqr2e,charge_i,charge_j,
-        px12, py12, pz12, force_coul_factor_rs,force_coul_rs);
-      force_coul_rs = force_coul_rs - (1-weight)*force_coul_factor_rs;
-
-      fs_ij = force_lj_rs + force_coul_rs;
-      sum_fx += fs_ij * px12;
-      sum_fy += fs_ij * py12;
-      sum_fz += fs_ij * pz12;
+      if (distance_2 <= EPSILON || distance_2 > rs_2) {
+        continue;
+      }
+      const rbmd::Id typej = __ldg(&atoms_type[tid2]);
+      const rbmd::Id pair_index = typei * lj_num_types + typej;
+      const rbmd::Real force_lj = LJForceFromTypePair(
+          distance_2, rbmd::Real(1), __ldg(&lj_force12[pair_index]),
+          __ldg(&lj_force6[pair_index]));
+      const rbmd::Id gid2 = __ldg(&atoms_id[tid2]);
+      const rbmd::Real special_weight = LookupSpecialWeightFromRow(
+          gid2, special_row, special_bloom, n12, n13, n14, w12, w13, w14);
+      const rbmd::Real charge_j = __ldg(&charge[tid2]);
+      const rbmd::Real coulomb_prefactor = -qqr2e * charge_i * charge_j;
+      rbmd::Real force_coul = coulomb_prefactor *
+          RblScreenedCoulombCoefficient(
+              distance_2, alpha, coulomb_coeff, table_r2_min, table_scale,
+              table_intervals, taylor0, taylor1, taylor2, taylor3, taylor4,
+              taylor5);
+      if (special_weight != rbmd::Real(1)) {
+        const rbmd::Real r3inv =
+            (rbmd::Real(1) / distance_2) * RblInverseSqrt(distance_2);
+        force_coul -=
+            (rbmd::Real(1) - special_weight) * coulomb_prefactor * r3inv;
+      }
+      const rbmd::Real force_pair = special_weight * force_lj + force_coul;
+      sum_fx += force_pair * px12;
+      sum_fy += force_pair * py12;
+      sum_fz += force_pair * pz12;
     }
 
-    // rcs
-    rbmd::Id real_random_num = random_neighbor_num[tid1];
-    for (rbmd::Id jj = 0; jj < real_random_num; ++jj) {
-      const unsigned long random_neighbor_index =
-          static_cast<unsigned long>(jj) *
-              static_cast<unsigned long>(num_atoms) +
-          static_cast<unsigned long>(tid1);
-      rbmd::Id tid2 = id_random_neighbor[random_neighbor_index];
+    const rbmd::Id frequency = pice_num > 0 ? pice_num : rbmd::Id(1);
+    const rbmd::Id candidate_count = fused_candidate_sampling
+        ? (candidate_implicit_offsets
+               ? __ldg(&candidate_num[tid1])
+               : __ldg(&candidate_end[tid1]) -
+                     __ldg(&candidate_start[tid1]))
+        : rbmd::Id(0);
+    const rbmd::Id fused_draw_count =
+        candidate_count > 0
+            ? (candidate_count + frequency - 1) / frequency
+            : rbmd::Id(0);
+    const rbmd::Id real_random_num = fused_candidate_sampling
+        ? MIN(fused_draw_count, neighbor_sample_num)
+        : __ldg(&random_neighbor_num[tid1]);
+    const rbmd::Real shell_multiplier = fused_candidate_sampling
+        ? (real_random_num > 0
+               ? static_cast<rbmd::Real>(candidate_count) /
+                     static_cast<rbmd::Real>(real_random_num)
+               : rbmd::Real(0))
+        : (random_neighbor_weight
+               ? __ldg(&random_neighbor_weight[tid1])
+               : static_cast<rbmd::Real>(pice_num));
+    const unsigned long long candidate_begin = fused_candidate_sampling
+        ? (candidate_implicit_offsets
+               ? static_cast<unsigned long long>(tid1) *
+                     static_cast<unsigned long long>(candidate_capacity)
+               : static_cast<unsigned long long>(
+                     __ldg(&candidate_start[tid1])))
+        : 0ULL;
+    const rbmd::Id atom_id = fused_candidate_sampling
+        ? __ldg(&atoms_id[tid1])
+        : rbmd::Id(0);
+    const rbmd::Id systematic_start =
+        fused_candidate_sampling && real_random_num > 0
+            ? CvffRblSystematicStart(atom_id, sample_epoch, candidate_count)
+            : rbmd::Id(0);
+    const rbmd::Id systematic_step =
+        real_random_num > 0 ? candidate_count / real_random_num : 0;
+    const rbmd::Id systematic_remainder =
+        real_random_num > 0 ? candidate_count % real_random_num : 0;
+    for (rbmd::Id jj = lane; jj < real_random_num;
+         jj += THREADS_PER_PARTICLE) {
+      rbmd::Id tid2;
+      if (fused_candidate_sampling) {
+        const rbmd::Id systematic_offset =
+            jj * systematic_step +
+            static_cast<rbmd::Id>(
+                (static_cast<unsigned long long>(jj) *
+                 static_cast<unsigned long long>(systematic_remainder)) /
+                static_cast<unsigned long long>(real_random_num));
+        rbmd::Id candidate_offset = systematic_start + systematic_offset;
+        if (candidate_offset >= candidate_count) {
+          candidate_offset -= candidate_count;
+        }
+        tid2 = __ldg(&candidate_neighbors[
+            candidate_begin +
+            static_cast<unsigned long long>(candidate_offset)]);
+      } else {
+        const unsigned long random_neighbor_index =
+            static_cast<unsigned long>(jj) *
+                static_cast<unsigned long>(num_atoms) +
+            static_cast<unsigned long>(tid1);
+        tid2 = __ldg(&id_random_neighbor[random_neighbor_index]);
+      }
       if (tid2 == static_cast<rbmd::Id>(tid1)) {
         continue;
       }
-      const rbmd::Id gid2 = atoms_id[tid2];
-      rbmd::Id typej = atoms_type[tid2];
-      rbmd::Real charge_j = charge[tid2];
-      const rbmd::Id pair_index = typei * lj_num_types + typej;
-      rbmd::Real x2 = px[tid2];
-      rbmd::Real y2 = py[tid2];
-      rbmd::Real z2 = pz[tid2];
-      rbmd::Real px12 = x2 - x1;
-      rbmd::Real py12 = y2 - y1;
-      rbmd::Real pz12 = z2 - z1;
-      MinImageDistance_while(box, px12, py12, pz12);
-
-      // compute the force_rcs
-      rbmd::Real force_coul_rcs,force_coul_factor_rcs;
-      rbmd::Real fcs_ij;
+      rbmd::Real px12 = __ldg(&px[tid2]) - x1;
+      rbmd::Real py12 = __ldg(&py[tid2]) - y1;
+      rbmd::Real pz12 = __ldg(&pz[tid2]) - z1;
+      MinImageDistance_fix(box, px12, py12, pz12);
       const rbmd::Real distance_2 =
           px12 * px12 + py12 * py12 + pz12 * pz12;
-      rbmd::Real force_lj_rcs = LJForceFromTypePair(
-          distance_2, rs * rs, rc * rc, static_cast<rbmd::Real>(pice_num),
-          lj_force12[pair_index], lj_force6[pair_index]);
-
-      const rbmd::Real weight =
-          LookupSpecialWeight(tid1, gid2, nspecial, special, maxspecial, w12,
-                              w13, w14);
-      force_lj_rcs = weight * force_lj_rcs;
-
-      CoulCutForce_rcs_fix(rc,rs, pice_num, alpha, qqr2e,
-      charge_i, charge_j, px12, py12, pz12, force_coul_factor_rcs,
-    force_coul_rcs);
-      force_coul_rcs = force_coul_rcs - (1-weight)*force_coul_factor_rcs;
-
-      fcs_ij = force_lj_rcs + force_coul_rcs;
-      sum_fx += fcs_ij * px12;
-      sum_fy += fcs_ij * py12;
-      sum_fz += fcs_ij * pz12;
+      if (distance_2 <= rs_2 || distance_2 >= rc_2) {
+        continue;
+      }
+      const rbmd::Id typej = __ldg(&atoms_type[tid2]);
+      const rbmd::Id pair_index = typei * lj_num_types + typej;
+      const rbmd::Real force_lj = LJForceFromTypePair(
+          distance_2, shell_multiplier, __ldg(&lj_force12[pair_index]),
+          __ldg(&lj_force6[pair_index]));
+      const rbmd::Id gid2 = __ldg(&atoms_id[tid2]);
+      const rbmd::Real special_weight = LookupSpecialWeightFromRow(
+          gid2, special_row, special_bloom, n12, n13, n14, w12, w13, w14);
+      const rbmd::Real charge_j = __ldg(&charge[tid2]);
+      const rbmd::Real coulomb_prefactor = -qqr2e * charge_i * charge_j;
+      rbmd::Real force_coul = shell_multiplier * coulomb_prefactor *
+          RblScreenedCoulombCoefficient(
+              distance_2, alpha, coulomb_coeff, table_r2_min, table_scale,
+              table_intervals, taylor0, taylor1, taylor2, taylor3, taylor4,
+              taylor5);
+      if (special_weight != rbmd::Real(1)) {
+        const rbmd::Real r3inv =
+            (rbmd::Real(1) / distance_2) * RblInverseSqrt(distance_2);
+        force_coul -=
+            (rbmd::Real(1) - special_weight) * shell_multiplier * coulomb_prefactor * r3inv;
+      }
+      const rbmd::Real force_pair = special_weight * force_lj + force_coul;
+      sum_fx += force_pair * px12;
+      sum_fy += force_pair * py12;
+      sum_fz += force_pair * pz12;
     }
 
+  }
+
+  sum_fx = ReduceParticleGroup<THREADS_PER_PARTICLE>(sum_fx);
+  sum_fy = ReduceParticleGroup<THREADS_PER_PARTICLE>(sum_fy);
+  sum_fz = ReduceParticleGroup<THREADS_PER_PARTICLE>(sum_fz);
+  if (tid1 < num_atoms && lane == 0) {
     fx[tid1] = sum_fx;
     fy[tid1] = sum_fy;
     fz[tid1] = sum_fz;
   }
-}
-
-// PairOpt v1 keeps the original kernel above as an executable reference.
-// Cache only topology data: neither neighbor order nor sampling is changed.
-struct PairOptSpecialCache {
-  const rbmd::Id* row;
-  rbmd::Id first_id;
-  rbmd::Id second_id;
-  rbmd::Real first_weight;
-  rbmd::Real second_weight;
-  int n12;
-  int n13;
-  int count;
-};
-
-inline __device__ PairOptSpecialCache LoadPairOptSpecialCache(
-    unsigned int tid1, const int* nspecial, const rbmd::Id* special,
-    int maxspecial, rbmd::Real w12, rbmd::Real w13, rbmd::Real w14) {
-  PairOptSpecialCache cache{};
-  LoadSpecialCounts(tid1, nspecial, maxspecial, cache.n12, cache.n13,
-                    cache.count);
-  if (!special || maxspecial <= 0 || cache.count <= 0) {
-    cache.count = 0;
-    return cache;
+  if (lane != 0) {
+    sum_fx = rbmd::Real(0);
+    sum_fy = rbmd::Real(0);
+    sum_fz = rbmd::Real(0);
   }
-  cache.row = special + static_cast<long long>(tid1) *
-                            static_cast<long long>(maxspecial);
-  if (cache.count > 0) {
-    cache.first_id = cache.row[0];
-    cache.first_weight = (0 < cache.n12) ? w12 : ((0 < cache.n13) ? w13 : w14);
-  }
-  if (cache.count > 1) {
-    cache.second_id = cache.row[1];
-    cache.second_weight = (1 < cache.n12) ? w12 : ((1 < cache.n13) ? w13 : w14);
-  }
-  return cache;
-}
 
-inline __device__ rbmd::Real LookupPairOptSpecialWeight(
-    const PairOptSpecialCache& cache, rbmd::Id gid2, rbmd::Real w12,
-    rbmd::Real w13, rbmd::Real w14) {
-  // First-match semantics also hold for unusual rows containing duplicates.
-  if (cache.count > 0 && cache.first_id == gid2) return cache.first_weight;
-  if (cache.count > 1 && cache.second_id == gid2) return cache.second_weight;
-  for (int k = 2; k < cache.count; ++k) {
-    if (cache.row[k] == gid2) {
-      return (k < cache.n12) ? w12 : ((k < cache.n13) ? w13 : w14);
-    }
-  }
-  return rbmd::Real(1);
-}
-
-inline __device__ rbmd::Real PairOptForceCoefficient(
-    rbmd::Real distance_2, rbmd::Real lower_cutoff_2,
-    rbmd::Real upper_cutoff_2, rbmd::Real multiplier,
-    rbmd::Real alpha, rbmd::Real sqrt_alpha,
-    rbmd::Real gaussian_prefactor, rbmd::Real negative_charge_product,
-    rbmd::Real weight, rbmd::Real lj_force12, rbmd::Real lj_force6) {
-  if (distance_2 <= lower_cutoff_2 || distance_2 >= upper_cutoff_2) {
-    return rbmd::Real(0);
-  }
-  const rbmd::Real r = SQRT(distance_2);
-  const rbmd::Real r2inv = rbmd::Real(1) / distance_2;
-  const rbmd::Real rinv = rbmd::Real(1) / r;
-  const rbmd::Real r6inv = r2inv * r2inv * r2inv;
-  const rbmd::Real force_lj =
-      -multiplier * r2inv * r6inv * (lj_force12 * r6inv - lj_force6);
-  // Keep erf-based screening, precision-specific math, and the original cutoffs.
-  const rbmd::Real screening =
-      (rbmd::Real(1) - ERF(sqrt_alpha * r)) * r2inv +
-      gaussian_prefactor * EXP(-alpha * distance_2) * rinv;
-  const rbmd::Real force_coul =
-      multiplier * negative_charge_product * screening * rinv;
-  // The full Coulomb special correction is NOT scaled by the shell multiplier.
-  // r^3 uses the already available squared distance rather than a pow call.
-  const rbmd::Real full_coul = negative_charge_product / (distance_2 * r);
-  const rbmd::Real corrected_coul =
-      force_coul - (rbmd::Real(1) - weight) * full_coul;
-  return weight * force_lj + corrected_coul;
-}
-
-__global__ void ComputeSpecialLJCutCoulRBLForcePairOptV1(
-    Box box, const rbmd::Real rs, const rbmd::Real rc,
-    const rbmd::Id num_atoms, const rbmd::Id neighbor_sample_num,
-    const rbmd::Id pice_num, const rbmd::Real alpha, const rbmd::Real qqr2e,
-    const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
-    const rbmd::Id lj_num_types, const rbmd::Real* lj_force12,
-    const rbmd::Real* lj_force6, const rbmd::Id* start_id,
-    const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
-    const rbmd::Id* id_random_neighbor, const rbmd::Id* random_neighbor_num,
-    const int* nspecial, const rbmd::Id* special, int maxspecial,
-    rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
-    const rbmd::Real* charge, const rbmd::Real* px, const rbmd::Real* py,
-    const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz) {
-  const unsigned int tid1 = blockIdx.x * blockDim.x + threadIdx.x;
-  if (tid1 >= num_atoms) return;
-  const PairOptSpecialCache specials = LoadPairOptSpecialCache(
-      tid1, nspecial, special, maxspecial, w12, w13, w14);
-  const rbmd::Id type_offset = atoms_type[tid1] * lj_num_types;
-  const rbmd::Real negative_charge_i = -qqr2e * charge[tid1];
-  const rbmd::Real x1 = px[tid1];
-  const rbmd::Real y1 = py[tid1];
-  const rbmd::Real z1 = pz[tid1];
-  const rbmd::Real rs2 = rs * rs;
-  const rbmd::Real rc2 = rc * rc;
-  const rbmd::Real sqrt_alpha = SQRT(alpha);
-  const rbmd::Real gaussian_prefactor =
-      rbmd::Real(2) * sqrt_alpha / SQRT(rbmd::Real(RBMD_PI));
-  rbmd::Real sum_fx = 0;
-  rbmd::Real sum_fy = 0;
-  rbmd::Real sum_fz = 0;
-
-  for (rbmd::Id j = start_id[tid1]; j < end_id[tid1]; ++j) {
-    const rbmd::Id tid2 = id_verletlist[j];
-    if (tid2 == static_cast<rbmd::Id>(tid1)) continue;
-    rbmd::Real dx = px[tid2] - x1;
-    rbmd::Real dy = py[tid2] - y1;
-    rbmd::Real dz = pz[tid2] - z1;
-    MinImageDistance_while(box, dx, dy, dz);
-    const rbmd::Real distance_2 = dx * dx + dy * dy + dz * dz;
-    const rbmd::Id pair_index = type_offset + atoms_type[tid2];
-    const rbmd::Real weight = LookupPairOptSpecialWeight(
-        specials, atoms_id[tid2], w12, w13, w14);
-    const rbmd::Real f = PairOptForceCoefficient(
-        distance_2, rbmd::Real(EPSILON), rs2, rbmd::Real(1), alpha,
-        sqrt_alpha, gaussian_prefactor, negative_charge_i * charge[tid2],
-        weight, lj_force12[pair_index], lj_force6[pair_index]);
-    sum_fx += f * dx;
-    sum_fy += f * dy;
-    sum_fz += f * dz;
-  }
-  const rbmd::Id real_random_num = random_neighbor_num[tid1];
-  for (rbmd::Id jj = 0; jj < real_random_num; ++jj) {
-    const unsigned long random_neighbor_index =
-        static_cast<unsigned long>(jj) * static_cast<unsigned long>(num_atoms) +
-        static_cast<unsigned long>(tid1);
-    const rbmd::Id tid2 = id_random_neighbor[random_neighbor_index];
-    if (tid2 == static_cast<rbmd::Id>(tid1)) continue;
-    rbmd::Real dx = px[tid2] - x1;
-    rbmd::Real dy = py[tid2] - y1;
-    rbmd::Real dz = pz[tid2] - z1;
-    MinImageDistance_while(box, dx, dy, dz);
-    const rbmd::Real distance_2 = dx * dx + dy * dy + dz * dz;
-    const rbmd::Id pair_index = type_offset + atoms_type[tid2];
-    const rbmd::Real weight = LookupPairOptSpecialWeight(
-        specials, atoms_id[tid2], w12, w13, w14);
-    const rbmd::Real f = PairOptForceCoefficient(
-        distance_2, rs2, rc2, static_cast<rbmd::Real>(pice_num), alpha,
-        sqrt_alpha, gaussian_prefactor, negative_charge_i * charge[tid2],
-        weight, lj_force12[pair_index], lj_force6[pair_index]);
-    sum_fx += f * dx;
-    sum_fy += f * dy;
-    sum_fz += f * dz;
-  }
-  fx[tid1] = sum_fx;
-  fy[tid1] = sum_fy;
-  fz[tid1] = sum_fz;
-}
-
-namespace {
-int PairOptRank() {
-#ifdef USE_MPI
-  int initialized = 0;
-  MPI_Initialized(&initialized);
-  int rank = -1;
-  if (initialized) MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  return rank;
-#else
-  return 0;
-#endif
-}
-
-[[noreturn]] void PairOptFail(const char* message) {
-  std::fprintf(stderr, "PAIR_OPT_ERROR rank=%d %s\n", PairOptRank(), message);
-  std::fflush(stderr);
-#ifdef USE_MPI
-  int initialized = 0;
-  MPI_Initialized(&initialized);
-  if (initialized) MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
-#endif
-  std::abort();
-}
-
-bool PairOptSelected() {
-  static const bool selected = [] {
-    const char* mode = std::getenv("RBMD_PAIR_KERNEL");
-    if (!mode || std::strcmp(mode, "optimized") == 0) return true;
-    if (std::strcmp(mode, "reference") == 0) return false;
-    PairOptFail("RBMD_PAIR_KERNEL must be reference or optimized");
-  }();
-  return selected;
-}
-
-bool PairOptValidateEnabled() {
-  static const bool enabled = [] {
-    const char* flag = std::getenv("RBMD_PAIR_VALIDATE");
-    return flag && std::strcmp(flag, "1") == 0;
-  }();
-  return enabled;
-}
-
-void PairOptRequireRuntime(ERROR_T error, const char* operation) {
-  if (error != SUCCESS) {
-    std::fprintf(stderr, "PAIR_OPT_RUNTIME operation=%s error=%s\n", operation,
-                 GETERRORSTRING(error));
-    PairOptFail("GPU validation operation failed");
+  const rbmd::Real block_sum_fx =
+      BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage_fx).Sum(sum_fx);
+  const rbmd::Real block_sum_fy =
+      BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage_fy).Sum(sum_fy);
+  const rbmd::Real block_sum_fz =
+      BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage_fz).Sum(sum_fz);
+  if (threadIdx.x == 0) {
+    atomicAdd(&force_sum[0], block_sum_fx);
+    atomicAdd(&force_sum[1], block_sum_fy);
+    atomicAdd(&force_sum[2], block_sum_fz);
   }
 }
 
-void PairOptCompareForces(rbmd::Id num_atoms, const rbmd::Real* const reference[3],
-                          const rbmd::Real* const candidate[3]) {
-  const size_t count = static_cast<size_t>(num_atoms);
-  std::vector<rbmd::Real> host_reference(3 * count);
-  std::vector<rbmd::Real> host_candidate(3 * count);
-  for (int axis = 0; axis < 3; ++axis) {
-    PairOptRequireRuntime(MEMCPY(host_reference.data() + axis * count,
-                                 reference[axis], count * sizeof(rbmd::Real), D2H),
-                          "reference D2H");
-    PairOptRequireRuntime(MEMCPY(host_candidate.data() + axis * count,
-                                 candidate[axis], count * sizeof(rbmd::Real), D2H),
-                          "optimized D2H");
+__global__ void SumRblCorrectedForces(
+    const rbmd::Id num_atoms, rbmd::Real corr_x, rbmd::Real corr_y,
+    rbmd::Real corr_z, const rbmd::Real* __restrict__ force_ljcoul_x,
+    const rbmd::Real* __restrict__ force_ljcoul_y,
+    const rbmd::Real* __restrict__ force_ljcoul_z,
+    const rbmd::Real* __restrict__ force_kspace_x,
+    const rbmd::Real* __restrict__ force_kspace_y,
+    const rbmd::Real* __restrict__ force_kspace_z,
+    const rbmd::Real* __restrict__ force_bond_x,
+    const rbmd::Real* __restrict__ force_bond_y,
+    const rbmd::Real* __restrict__ force_bond_z,
+    const rbmd::Real* __restrict__ force_angle_x,
+    const rbmd::Real* __restrict__ force_angle_y,
+    const rbmd::Real* __restrict__ force_angle_z,
+    const rbmd::Real* __restrict__ force_dihedral_x,
+    const rbmd::Real* __restrict__ force_dihedral_y,
+    const rbmd::Real* __restrict__ force_dihedral_z,
+    const rbmd::Real* __restrict__ force_improper_x,
+    const rbmd::Real* __restrict__ force_improper_y,
+    const rbmd::Real* __restrict__ force_improper_z,
+    rbmd::Real* __restrict__ force_x, rbmd::Real* __restrict__ force_y,
+    rbmd::Real* __restrict__ force_z) {
+  const rbmd::Id atom = blockIdx.x * blockDim.x + threadIdx.x;
+  if (atom >= num_atoms) {
+    return;
   }
-  double squared_reference = 0;
-  double squared_difference = 0;
-  double max_abs_error = 0;
-  double max_abs_reference = 0;
-  size_t nonfinite = 0;
-  for (size_t i = 0; i < 3 * count; ++i) {
-    const double ref = static_cast<double>(host_reference[i]);
-    const double opt = static_cast<double>(host_candidate[i]);
-    if (!std::isfinite(ref) || !std::isfinite(opt)) {
-      ++nonfinite;
-      continue;
-    }
-    const double difference = opt - ref;
-    squared_reference += ref * ref;
-    squared_difference += difference * difference;
-    max_abs_error = std::max(max_abs_error, std::abs(difference));
-    max_abs_reference = std::max(max_abs_reference, std::abs(ref));
-  }
-  double relative_l2 = std::sqrt(
-      squared_difference / std::max(squared_reference, 1e-300));
-  double normalized_max_error =
-      max_abs_error / std::max(max_abs_reference, 1e-300);
-  bool finite = nonfinite == 0 && std::isfinite(relative_l2) &&
-                std::isfinite(normalized_max_error);
-  // Keep emitted metrics valid JSON even in the nonfinite failure case.
-  if (!std::isfinite(relative_l2)) relative_l2 = 1e300;
-  if (!std::isfinite(normalized_max_error)) normalized_max_error = 1e300;
-  const bool passed = finite && relative_l2 <= 1e-5 &&
-                      normalized_max_error <= 1e-4;
-  std::fprintf(stderr,
-      "PAIR_VALIDATE_JSON={\"rank\":%d,\"num_atoms\":%llu,"
-      "\"comparison\":\"reference_vs_optimized_v1_same_inputs\","
-      "\"finite\":%s,\"nonfinite_components\":%llu,"
-      "\"relative_l2\":%.17g,\"max_abs_error\":%.17g,"
-      "\"max_abs_reference\":%.17g,\"normalized_max_error\":%.17g,"
-      "\"relative_l2_limit\":1e-5,\"normalized_max_limit\":1e-4,"
-      "\"passed\":%s}\n",
-      PairOptRank(), static_cast<unsigned long long>(num_atoms),
-      finite ? "true" : "false", static_cast<unsigned long long>(nonfinite),
-      relative_l2, max_abs_error, max_abs_reference, normalized_max_error,
-      passed ? "true" : "false");
-  std::fflush(stderr);
-  if (!passed) PairOptFail("reference/optimized force comparison failed");
+  force_x[atom] = force_ljcoul_x[atom] - corr_x + force_kspace_x[atom] +
+                  force_bond_x[atom] + force_angle_x[atom] +
+                  force_dihedral_x[atom] + force_improper_x[atom];
+  force_y[atom] = force_ljcoul_y[atom] - corr_y + force_kspace_y[atom] +
+                  force_bond_y[atom] + force_angle_y[atom] +
+                  force_dihedral_y[atom] + force_improper_y[atom];
+  force_z[atom] = force_ljcoul_z[atom] - corr_z + force_kspace_z[atom] +
+                  force_bond_z[atom] + force_angle_z[atom] +
+                  force_dihedral_z[atom] + force_improper_z[atom];
 }
-}  // namespace
 
 //verlet-list : SpecialLJCutCoul Energy
 __global__ void ComputeSpecialLJCutCoulEnergy(
      Box box, const rbmd::Real cut_off,
     const rbmd::Id num_atoms, const rbmd::Real alpha, const rbmd::Real qqr2e,
     const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
-    const rbmd::Real* sigma, const rbmd::Real* eps, const rbmd::Id* start_id,
+    const rbmd::Real* sigma, const rbmd::Real* eps, bool geometric_lj_mixing,
+    const rbmd::Id* start_id,
     const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
     const int* nspecial, const rbmd::Id* special, int maxspecial,
     rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
@@ -834,7 +880,7 @@ __global__ void ComputeSpecialLJCutCoulEnergy(
 
       // mix
       rbmd::Real eps_ij = SQRT(eps_i * eps_j);
-      rbmd::Real sigma_ij = (sigma_i + sigma_j) / 2;
+      rbmd::Real sigma_ij = rbmd::MixLJSigma(sigma_i, sigma_j, geometric_lj_mixing);
 
       rbmd::Real x2 = px[tid2];
       rbmd::Real y2 = py[tid2];
@@ -907,7 +953,7 @@ __global__ void ComputeSpecialLJCutCoulEnergy(
  //bond
 __global__ void ComputeBondForce(
      Box box, const rbmd::Id num_atoms,const rbmd::Id num_bonds,
-     const rbmd::Id* atom_id_to_idx,
+     rbmd::AtomIndexMapView atom_id_to_idx,
     const rbmd::Real* bond_coeffs_k, const rbmd::Real* bond_coeffs_equilibrium,
     const rbmd::Id* bond_type, const rbmd::Id* bondlisti,
     const rbmd::Id* bondlistj, const rbmd::Real* px, const rbmd::Real* py,
@@ -1008,7 +1054,7 @@ __global__ void ComputeBondForce(
 //angle
   __global__ void ComputeAngleForce(
        Box box, const rbmd::Id num_atoms,const rbmd::Id num_anglels,
-       const rbmd::Id* atom_id_to_idx,
+       rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Real* anglel_coeffs_k,
       const rbmd::Real* anglel_coeffs_equilibrium, const rbmd::Id* anglel_type,
       const rbmd::Id* anglelisti, const rbmd::Id* anglelistj,
@@ -1157,7 +1203,7 @@ __global__ void ComputeBondForce(
   //Dihedral
   __global__ void ComputeDihedralForce(
        Box box, const rbmd::Id num_atoms,const rbmd::Id num_dihedrals,
-       const rbmd::Id* atom_id_to_idx,const rbmd::Real* dihedral_coeffs_k,
+       rbmd::AtomIndexMapView atom_id_to_idx,const rbmd::Real* dihedral_coeffs_k,
        const rbmd::Id* dihedral_coeffs_sign,
       const rbmd::Id* dihedral_coeffs_multiplicity, const rbmd::Id* dihedral_type,
       const rbmd::Id* dihedrallisti, const rbmd::Id* dihedrallistj,
@@ -1399,7 +1445,7 @@ __global__ void ComputeBondForce(
 
   __global__ void ComputeDihedralOPLSForce(
        Box box, const rbmd::Id num_atoms,const rbmd::Id num_dihedrals,
-       const rbmd::Id* atom_id_to_idx,const rbmd::Real* dihedral_coeffs_k1,
+       rbmd::AtomIndexMapView atom_id_to_idx,const rbmd::Real* dihedral_coeffs_k1,
        const rbmd::Real* dihedral_coeffs_k2,const rbmd::Real* dihedral_coeffs_k3,
       const rbmd::Real* dihedral_coeffs_k4, const rbmd::Id* dihedral_type,
       const rbmd::Id* dihedrallisti, const rbmd::Id* dihedrallistj,
@@ -1648,7 +1694,7 @@ __global__ void ComputeBondForce(
 
 __global__ void ComputeDihedralFourierForce(
     Box box, const rbmd::Id num_atoms, const rbmd::Id num_dihedrals,
-    const rbmd::Id* atom_id_to_idx,
+    rbmd::AtomIndexMapView atom_id_to_idx,
     const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
     const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
     const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
@@ -1897,7 +1943,7 @@ __global__ void ComputeDihedralFourierForce(
 
 __global__ void ComputeDihedralFourierForcePerAtom(
     Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
-    const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+    const rbmd::Id* atoms_id, rbmd::AtomIndexMapView atom_id_to_idx,
     const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
     const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
     const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
@@ -2173,7 +2219,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   //Imprope
   __global__ void ComputeImproperHarmonicForce(
     Box box,const rbmd::Id num_atoms,const rbmd::Id num_impropers,
-    const rbmd::Id* atom_id_to_idx,const rbmd::Real* improper_coeffs_k,
+    rbmd::AtomIndexMapView atom_id_to_idx,const rbmd::Real* improper_coeffs_k,
     const rbmd::Real* improper_coeffs_chi,const rbmd::Id* improper_type,
     const rbmd::Id* improperlisti,const rbmd::Id* improperlistj,
     const rbmd::Id* improperlistk,const rbmd::Id* improperlistw,
@@ -2374,7 +2420,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
 
   __global__ void ComputeImproperCVFFForce(
     Box box,const rbmd::Id num_atoms,const rbmd::Id num_impropers,
-    const rbmd::Id* atom_id_to_idx,const rbmd::Real* improper_coeffs_k,
+    rbmd::AtomIndexMapView atom_id_to_idx,const rbmd::Real* improper_coeffs_k,
     const rbmd::Id* improper_coeffs_d,const rbmd::Id* improper_coeffs_n,
     const rbmd::Id* improper_type,
     const rbmd::Id* improperlisti,const rbmd::Id* improperlistj,
@@ -2631,7 +2677,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   __global__ void ComputeBondForcePerAtom(
       Box box, const rbmd::Id num_local_atoms,
       const rbmd::Id num_total_atoms,
-      const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* atoms_id, rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Id atom_id_to_idx_size,
       const rbmd::Real* bond_coeffs_k, int num_bond_types,
       const rbmd::Real* bond_coeffs_equilibrium,
@@ -2639,7 +2685,8 @@ __global__ void ComputeDihedralFourierForcePerAtom(
       const rbmd::Id* d_bond_atom, int bond_per_atom,
       const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
       rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
-      rbmd::Real* energy_bond, unsigned long long* count_bond) {
+      rbmd::Real* flat_virial, rbmd::Real* energy_bond,
+      unsigned long long* count_bond) {
     __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
         temp_storage_energy;
     __shared__ typename BLOCKREDUCE<unsigned long long, BLOCK_SIZE>::TempStorage
@@ -2647,6 +2694,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
 
     rbmd::Real local_energy_bond = 0.0;
     unsigned long long local_count_bond = 0ULL;
+    rbmd::Real sum_virial[6] = {};
 
     const unsigned int self_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (self_idx < static_cast<unsigned int>(num_local_atoms)) {
@@ -2667,7 +2715,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
         const int topo_offset = static_cast<int>(self_idx) * bond_per_atom + k;
         const int bondtype = d_bond_type[topo_offset];
         const rbmd::Id other_gid = d_bond_atom[topo_offset];
-        if (other_gid < 0 || other_gid >= atom_id_to_idx_size) {
+        if (other_gid < 0) {
           continue;
         }
         if (bondtype < 0 || bondtype >= num_bond_types) {
@@ -2703,6 +2751,16 @@ __global__ void ComputeDihedralFourierForcePerAtom(
         sum_fy += forcebond * y12;
         sum_fz += forcebond * z12;
 
+        // Both endpoints evaluate the bond, but only write their owned row.
+        // Summing these half shares across ranks recovers one bond virial.
+        const rbmd::Real half_forcebond = rbmd::Real(0.5) * forcebond;
+        sum_virial[0] += x12 * x12 * half_forcebond;
+        sum_virial[1] += y12 * y12 * half_forcebond;
+        sum_virial[2] += z12 * z12 * half_forcebond;
+        sum_virial[3] += x12 * y12 * half_forcebond;
+        sum_virial[4] += x12 * z12 * half_forcebond;
+        sum_virial[5] += y12 * z12 * half_forcebond;
+
         if (self_gid < other_gid) {
           local_energy_bond += rk * dr;
           local_count_bond += 1ULL;
@@ -2712,6 +2770,13 @@ __global__ void ComputeDihedralFourierForcePerAtom(
       fx[self_idx] = sum_fx;
       fy[self_idx] = sum_fy;
       fz[self_idx] = sum_fz;
+    }
+
+    if (self_idx < static_cast<unsigned int>(num_local_atoms)) {
+      for (int component = 0; component < 6; ++component) {
+        flat_virial[component * num_local_atoms + self_idx] =
+            sum_virial[component];
+      }
     }
 
     const rbmd::Real block_sum_energy =
@@ -2730,7 +2795,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   __global__ void ComputeAngleForcePerAtom(
       Box box, const rbmd::Id num_local_atoms,
       const rbmd::Id num_total_atoms,
-      const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* atoms_id, rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Real* anglel_coeffs_k,
       const rbmd::Real* anglel_coeffs_equilibrium, const int* d_num_angle,
       const int* d_angle_type, const rbmd::Id* d_angle_atom1,
@@ -2738,7 +2803,8 @@ __global__ void ComputeDihedralFourierForcePerAtom(
       int angle_per_atom,
       const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
       rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
-      rbmd::Real* energy_angle, unsigned long long* count_angle) {
+      rbmd::Real* flat_virial, rbmd::Real* energy_angle,
+      unsigned long long* count_angle) {
     __shared__ typename BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>::TempStorage
         temp_storage_energy;
     __shared__ typename BLOCKREDUCE<unsigned long long, BLOCK_SIZE>::TempStorage
@@ -2746,6 +2812,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
 
     rbmd::Real local_energy_angle = 0.0;
     unsigned long long local_count_angle = 0ULL;
+    rbmd::Real sum_virial[6] = {};
 
     const unsigned int self_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (self_idx < static_cast<unsigned int>(num_local_atoms)) {
@@ -2836,6 +2903,18 @@ __global__ void ComputeDihedralFourierForcePerAtom(
         const rbmd::Real force_j_y = -(force_i_y + force_k_y);
         const rbmd::Real force_j_z = -(force_i_z + force_k_z);
 
+        // Each of the three participants contributes one third of the
+        // translation-invariant angle virial to its owned row.
+        if (self_gid == gid_i || self_gid == gid_j || self_gid == gid_k) {
+          const rbmd::Real third = rbmd::Real(1) / rbmd::Real(3);
+          sum_virial[0] += third * (x12 * force_i_x + x23 * force_k_x);
+          sum_virial[1] += third * (y12 * force_i_y + y23 * force_k_y);
+          sum_virial[2] += third * (z12 * force_i_z + z23 * force_k_z);
+          sum_virial[3] += third * (x12 * force_i_y + x23 * force_k_y);
+          sum_virial[4] += third * (x12 * force_i_z + x23 * force_k_z);
+          sum_virial[5] += third * (y12 * force_i_z + y23 * force_k_z);
+        }
+
         if (self_gid == gid_i) {
           sum_fx += force_i_x;
           sum_fy += force_i_y;
@@ -2856,6 +2935,13 @@ __global__ void ComputeDihedralFourierForcePerAtom(
       fz[self_idx] = sum_fz;
     }
 
+    if (self_idx < static_cast<unsigned int>(num_local_atoms)) {
+      for (int component = 0; component < 6; ++component) {
+        flat_virial[component * num_local_atoms + self_idx] =
+            sum_virial[component];
+      }
+    }
+
     const rbmd::Real block_sum_energy =
         BLOCKREDUCE<rbmd::Real, BLOCK_SIZE>(temp_storage_energy)
             .Sum(local_energy_angle);
@@ -2872,7 +2958,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   __global__ void ComputeDihedralForcePerAtom(
       Box box, const rbmd::Id num_local_atoms,
       const rbmd::Id num_total_atoms,
-      const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* atoms_id, rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Real* dihedral_coeffs_k,
       const rbmd::Id* dihedral_coeffs_sign,
       const rbmd::Id* dihedral_coeffs_multiplicity, const int* d_num_dihedral,
@@ -3143,7 +3229,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   __global__ void ComputeDihedralOPLSForcePerAtom(
       Box box, const rbmd::Id num_local_atoms,
       const rbmd::Id num_total_atoms,
-      const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* atoms_id, rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Real* dihedral_coeffs_k1,
       const rbmd::Real* dihedral_coeffs_k2,
       const rbmd::Real* dihedral_coeffs_k3,
@@ -3425,7 +3511,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   __global__ void ComputeImproperHarmonicForcePerAtom(
       Box box, const rbmd::Id num_local_atoms,
       const rbmd::Id num_total_atoms,
-      const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* atoms_id, rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Real* improper_coeffs_k, const rbmd::Real* improper_coeffs_chi,
       const int* d_num_improper, const int* d_improper_type,
       const rbmd::Id* d_improper_atom1, const rbmd::Id* d_improper_atom2,
@@ -3665,7 +3751,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   __global__ void ComputeImproperCVFFForcePerAtom(
       Box box, const rbmd::Id num_local_atoms,
       const rbmd::Id num_total_atoms,
-      const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+      const rbmd::Id* atoms_id, rbmd::AtomIndexMapView atom_id_to_idx,
       const rbmd::Real* improper_coeffs_k, const rbmd::Id* improper_coeffs_d,
       const rbmd::Id* improper_coeffs_n, const int* d_num_improper,
       const int* d_improper_type, const rbmd::Id* d_improper_atom1,
@@ -3962,16 +4048,43 @@ __global__ void ComputeDihedralFourierForcePerAtom(
       rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
       const rbmd::Real* charge, const rbmd::Real* px, const rbmd::Real* py,
       const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
-      rbmd::Real* flat_virial,rbmd::Real* total_evdwl, rbmd::Real* total_ecoul) {
-    unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
-
-    CHECK_KERNEL(
-        ComputeSpecialLJCutCoulForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+      rbmd::Real* flat_virial,rbmd::Real* total_evdwl,
+      rbmd::Real* total_ecoul, rbmd::Id threads_per_particle,
+      STREAM_T stream) {
+    auto launch = [&](auto tpp_tag) {
+      constexpr int kTpp = decltype(tpp_tag)::value;
+      const rbmd::Id atoms_per_block = BLOCK_SIZE / kTpp;
+      const unsigned int blocks_per_grid =
+          (num_atoms + atoms_per_block - 1) / atoms_per_block;
+      CHECK_KERNEL((ComputeSpecialLJCutCoulForce<kTpp>
+                    <<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
             box, cut_off, num_atoms, alpha, qqr2e, atoms_type,
             atoms_id, lj_num_types, lj_force12, lj_force6, start_id, end_id,
             id_verletlist, nspecial,
             special, maxspecial, w12, w13, w14, charge, px, py, pz, fx, fy,
-            fz, flat_virial,total_evdwl, total_ecoul));
+            fz, flat_virial,total_evdwl, total_ecoul)));
+    };
+    switch (threads_per_particle) {
+      case 4:
+        launch(std::integral_constant<int, 4>{});
+        break;
+      case 8:
+        launch(std::integral_constant<int, 8>{});
+        break;
+      case 16:
+        launch(std::integral_constant<int, 16>{});
+        break;
+      case 32:
+        launch(std::integral_constant<int, 32>{});
+        break;
+      case 64:
+        launch(std::integral_constant<int, 64>{});
+        break;
+      case 1:
+      default:
+        launch(std::integral_constant<int, 1>{});
+        break;
+    }
   }
 
 //RBL:  force  of special lJ_cut and coul_cut
@@ -3984,67 +4097,97 @@ __global__ void ComputeDihedralFourierForcePerAtom(
       const rbmd::Real* lj_force6, const rbmd::Id* start_id,
       const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
       const rbmd::Id* id_random_neighbor, const rbmd::Id* random_neighbor_num,
+      const rbmd::Real* random_neighbor_weight,
+      bool fused_candidate_sampling, const rbmd::Id* candidate_start,
+      const rbmd::Id* candidate_end, const rbmd::Id* candidate_num,
+      const rbmd::Id* candidate_neighbors, rbmd::Id candidate_capacity,
+      bool candidate_implicit_offsets, rbmd::Id sample_epoch,
+      const rbmd::Real* coulomb_coeff, rbmd::Real table_r2_min,
+      rbmd::Real table_scale, rbmd::Id table_intervals,
+      const rbmd::Real* core_taylor,
       const int* nspecial, const rbmd::Id* special, int maxspecial,
       rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
       const rbmd::Real* charge, const rbmd::Real* px, const rbmd::Real* py,
-      const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz) {
+      const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
+      rbmd::Real* force_sum, rbmd::Id threads_per_particle,
+      STREAM_T stream) {
+    CHECK_RUNTIME(MEMSET_ASYNC(
+        force_sum, 0, 3 * sizeof(rbmd::Real), stream));
+
+  auto launch_rbl = [&](auto fused_tag, auto tpp_tag) {
+    constexpr bool kFused = decltype(fused_tag)::value;
+    constexpr int kTpp = decltype(tpp_tag)::value;
+    const rbmd::Id atoms_per_block = BLOCK_SIZE / kTpp;
+    const unsigned int blocks_per_grid =
+        (num_atoms + atoms_per_block - 1) / atoms_per_block;
+    CHECK_KERNEL(
+        (ComputeSpecialLJCutCoulRBLForce<kFused, kTpp>
+         <<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
+            box, rs, rc, num_atoms, neighbor_sample_num, pice_num,
+            alpha, qqr2e, atoms_type, atoms_id, lj_num_types, lj_force12,
+            lj_force6, start_id, end_id, id_verletlist, id_random_neighbor,
+            random_neighbor_num, random_neighbor_weight,
+            fused_candidate_sampling, candidate_start, candidate_end,
+            candidate_num, candidate_neighbors, candidate_capacity,
+            candidate_implicit_offsets, sample_epoch, coulomb_coeff,
+            table_r2_min, table_scale, table_intervals, core_taylor, nspecial,
+            special, maxspecial, w12, w13, w14, charge, px, py, pz, fx, fy,
+            fz, force_sum)));
+  };
+  auto dispatch_tpp = [&](auto fused_tag) {
+    switch (threads_per_particle) {
+      case 4:
+        launch_rbl(fused_tag, std::integral_constant<int, 4>{});
+        break;
+      case 8:
+        launch_rbl(fused_tag, std::integral_constant<int, 8>{});
+        break;
+      case 16:
+        launch_rbl(fused_tag, std::integral_constant<int, 16>{});
+        break;
+      case 32:
+        launch_rbl(fused_tag, std::integral_constant<int, 32>{});
+        break;
+      case 64:
+        launch_rbl(fused_tag, std::integral_constant<int, 64>{});
+        break;
+      case 1:
+      default:
+        launch_rbl(fused_tag, std::integral_constant<int, 1>{});
+        break;
+    }
+  };
+  if (fused_candidate_sampling) {
+    dispatch_tpp(std::true_type{});
+  } else {
+    dispatch_tpp(std::false_type{});
+  }
+  }
+
+  void SumRblForcesOp<device::DEVICE_GPU>::operator()(
+      const rbmd::Id num_atoms, rbmd::Real corr_x, rbmd::Real corr_y,
+      rbmd::Real corr_z, const rbmd::Real* force_ljcoul_x,
+      const rbmd::Real* force_ljcoul_y, const rbmd::Real* force_ljcoul_z,
+      const rbmd::Real* force_kspace_x, const rbmd::Real* force_kspace_y,
+      const rbmd::Real* force_kspace_z, const rbmd::Real* force_bond_x,
+      const rbmd::Real* force_bond_y, const rbmd::Real* force_bond_z,
+      const rbmd::Real* force_angle_x, const rbmd::Real* force_angle_y,
+      const rbmd::Real* force_angle_z, const rbmd::Real* force_dihedral_x,
+      const rbmd::Real* force_dihedral_y,
+      const rbmd::Real* force_dihedral_z,
+      const rbmd::Real* force_improper_x,
+      const rbmd::Real* force_improper_y,
+      const rbmd::Real* force_improper_z, rbmd::Real* force_x,
+      rbmd::Real* force_y, rbmd::Real* force_z, STREAM_T stream) {
     const unsigned int blocks_per_grid =
         (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    const bool optimized = PairOptSelected();
-    static bool announced = false;
-    if (!announced) {
-      std::fprintf(stderr,
-          "PAIR_KERNEL_JSON={\"rank\":%d,\"kernel\":\"%s\","
-          "\"variant\":\"pairopt_v1\",\"threads_per_atom\":1,"
-          "\"force_validation\":%s}\n",
-          PairOptRank(), optimized ? "optimized" : "reference",
-          PairOptValidateEnabled() ? "true" : "false");
-      std::fflush(stderr);
-      announced = true;
-    }
-    if (num_atoms <= 0) return;
-    auto launch_pair = [&](bool use_optimized, rbmd::Real* out_x,
-                           rbmd::Real* out_y, rbmd::Real* out_z) {
-      if (use_optimized) {
-        CHECK_KERNEL(
-            ComputeSpecialLJCutCoulRBLForcePairOptV1
-                <<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
-                    box, rs, rc, num_atoms, neighbor_sample_num, pice_num, alpha,
-                    qqr2e, atoms_type, atoms_id, lj_num_types, lj_force12,
-                    lj_force6, start_id, end_id, id_verletlist,
-                    id_random_neighbor, random_neighbor_num, nspecial, special,
-                    maxspecial, w12, w13, w14, charge, px, py, pz,
-                    out_x, out_y, out_z));
-      } else {
-        CHECK_KERNEL(
-            ComputeSpecialLJCutCoulRBLForce
-                <<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
-                    box, rs, rc, num_atoms, neighbor_sample_num, pice_num, alpha,
-                    qqr2e, atoms_type, atoms_id, lj_num_types, lj_force12,
-                    lj_force6, start_id, end_id, id_verletlist,
-                    id_random_neighbor, random_neighbor_num, nspecial, special,
-                    maxspecial, w12, w13, w14, charge, px, py, pz,
-                    out_x, out_y, out_z));
-      }
-    };
-    launch_pair(optimized, fx, fy, fz);
-    static bool validated = false;
-    if (PairOptValidateEnabled() && !validated) {
-      // Extra memory, copies, and synchronization exist ONLY in validation mode.
-      // The selected kernel's output remains in fx/fy/fz for the simulation.
-      const size_t count = static_cast<size_t>(num_atoms);
-      thrust::device_vector<rbmd::Real> other_forces(3 * count);
-      rbmd::Real* other_x = raw_ptr(other_forces);
-      rbmd::Real* other_y = other_x + count;
-      rbmd::Real* other_z = other_y + count;
-      launch_pair(!optimized, other_x, other_y, other_z);
-      PairOptRequireRuntime(DEVICESYNC(), "force comparison synchronize");
-      const rbmd::Real* selected[3] = {fx, fy, fz};
-      const rbmd::Real* other[3] = {other_x, other_y, other_z};
-      PairOptCompareForces(num_atoms, optimized ? other : selected,
-                           optimized ? selected : other);
-      validated = true;
-    }
+    CHECK_KERNEL(SumRblCorrectedForces<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
+        num_atoms, corr_x, corr_y, corr_z, force_ljcoul_x, force_ljcoul_y,
+        force_ljcoul_z, force_kspace_x, force_kspace_y, force_kspace_z,
+        force_bond_x, force_bond_y, force_bond_z, force_angle_x,
+        force_angle_y, force_angle_z, force_dihedral_x, force_dihedral_y,
+        force_dihedral_z, force_improper_x, force_improper_y,
+        force_improper_z, force_x, force_y, force_z));
   }
 
   //verlet-list:  Energy of special lJ_cut and coul_cut
@@ -4052,19 +4195,21 @@ __global__ void ComputeDihedralFourierForcePerAtom(
      Box box, const rbmd::Real cut_off,
     const rbmd::Id num_atoms, const rbmd::Real alpha, const rbmd::Real qqr2e,
     const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
-    const rbmd::Real* sigma, const rbmd::Real* eps, const rbmd::Id* start_id,
+    const rbmd::Real* sigma, const rbmd::Real* eps, bool geometric_lj_mixing,
+    const rbmd::Id* start_id,
     const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
     const int* nspecial, const rbmd::Id* special, int maxspecial,
     rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
     const rbmd::Real* charge, const rbmd::Real* px, const rbmd::Real* py,
     const rbmd::Real* pz, rbmd::Real* flat_virial,
-    rbmd::Real* total_evdwl, rbmd::Real* total_ecoul) {
+    rbmd::Real* total_evdwl, rbmd::Real* total_ecoul,
+    STREAM_T stream) {
     unsigned int blocks_per_grid = (num_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     CHECK_KERNEL(
-        ComputeSpecialLJCutCoulEnergy<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+        ComputeSpecialLJCutCoulEnergy<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
             box, cut_off, num_atoms, alpha, qqr2e, atoms_type,
-            atoms_id, sigma, eps, start_id, end_id, id_verletlist, nspecial,
+            atoms_id, sigma, eps, geometric_lj_mixing, start_id, end_id, id_verletlist, nspecial,
             special, maxspecial, w12, w13, w14, charge, px, py, pz,
             flat_virial,total_evdwl, total_ecoul));
   }
@@ -4072,15 +4217,16 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   // force of bond
   void ComputeBondForceOp<device::DEVICE_GPU>::operator()(
        Box box,const rbmd::Id num_atoms,const rbmd::Id num_bonds,
-       const rbmd::Id* atom_id_to_idx,const rbmd::Real* bond_coeffs_k,
+       rbmd::AtomIndexMapView atom_id_to_idx,const rbmd::Real* bond_coeffs_k,
        const rbmd::Real* bond_coeffs_equilibrium,const rbmd::Id* bond_type,
        const rbmd::Id* bondlisti,const rbmd::Id* bondlistj,
        const rbmd::Real* px, const rbmd::Real* py,const rbmd::Real* pz,
        rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
-       rbmd::Real* flat_virial, rbmd::Real* global_virial,rbmd::Real* energy_bond) {
+       rbmd::Real* flat_virial, rbmd::Real* global_virial,
+       rbmd::Real* energy_bond, STREAM_T stream) {
     unsigned int blocks_per_grid = (num_bonds + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    CHECK_KERNEL(ComputeBondForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+    CHECK_KERNEL(ComputeBondForce<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
         box, num_atoms,num_bonds, atom_id_to_idx, bond_coeffs_k, bond_coeffs_equilibrium,
         bond_type, bondlisti, bondlistj, px, py, pz, fx, fy, fz,flat_virial,
         global_virial,energy_bond));
@@ -4089,38 +4235,41 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   void ComputeBondForcePerAtomOp<device::DEVICE_GPU>::operator()(
        Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
        const rbmd::Id* atoms_id,
-       const rbmd::Id* atom_id_to_idx, const rbmd::Id atom_id_to_idx_size,
+       rbmd::AtomIndexMapView atom_id_to_idx, const rbmd::Id atom_id_to_idx_size,
        const rbmd::Real* bond_coeffs_k,
        int num_bond_types, const rbmd::Real* bond_coeffs_equilibrium,
        const int* d_num_bond, const int* d_bond_type, const rbmd::Id* d_bond_atom,
        int bond_per_atom, const rbmd::Real* px, const rbmd::Real* py,
        const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
-       rbmd::Real* energy_bond, unsigned long long* count_bond) {
+       rbmd::Real* flat_virial, rbmd::Real* energy_bond,
+       unsigned long long* count_bond,
+       STREAM_T stream) {
     unsigned int blocks_per_grid =
         (num_local_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    CHECK_KERNEL(ComputeBondForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+    CHECK_KERNEL(ComputeBondForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
         box, num_local_atoms, num_total_atoms, atoms_id, atom_id_to_idx,
         atom_id_to_idx_size,
         bond_coeffs_k,
         num_bond_types, bond_coeffs_equilibrium, d_num_bond, d_bond_type,
-        d_bond_atom, bond_per_atom, px, py, pz, fx, fy, fz, energy_bond,
+        d_bond_atom, bond_per_atom, px, py, pz, fx, fy, fz, flat_virial, energy_bond,
         count_bond));
   }
 
 // force of angle
   void ComputeAngleForceOp<device::DEVICE_GPU>::operator()(
        Box box, const rbmd::Id num_atoms,const rbmd::Id num_anglels,
-       const rbmd::Id* _atom_id_to_idx,
+       rbmd::AtomIndexMapView _atom_id_to_idx,
       const rbmd::Real* anglel_coeffs_k,
       const rbmd::Real* anglel_coeffs_equilibrium, const rbmd::Id* anglel_type,
       const rbmd::Id* anglelisti, const rbmd::Id* anglelistj,
       const rbmd::Id* anglelistk, const rbmd::Real* px, const rbmd::Real* py,
       const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
-      rbmd::Real* flat_virial,rbmd::Real* global_virial, rbmd::Real* energy_angle) {
+      rbmd::Real* flat_virial,rbmd::Real* global_virial,
+      rbmd::Real* energy_angle, STREAM_T stream) {
     unsigned int blocks_per_grid = (num_anglels + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    CHECK_KERNEL(ComputeAngleForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+    CHECK_KERNEL(ComputeAngleForce<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
         box, num_atoms,num_anglels, _atom_id_to_idx, anglel_coeffs_k,
         anglel_coeffs_equilibrium, anglel_type, anglelisti, anglelistj,
         anglelistk, px, py, pz, fx, fy, fz, flat_virial,global_virial,energy_angle));
@@ -4129,39 +4278,42 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   void ComputeAngleForcePerAtomOp<device::DEVICE_GPU>::operator()(
        Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
        const rbmd::Id* atoms_id,
-       const rbmd::Id* atom_id_to_idx, const rbmd::Real* anglel_coeffs_k,
+       rbmd::AtomIndexMapView atom_id_to_idx, const rbmd::Real* anglel_coeffs_k,
        const rbmd::Real* anglel_coeffs_equilibrium, const int* d_num_angle,
        const int* d_angle_type, const rbmd::Id* d_angle_atom1,
        const rbmd::Id* d_angle_atom2, const rbmd::Id* d_angle_atom3,
        int angle_per_atom, const rbmd::Real* px, const rbmd::Real* py,
        const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
-       rbmd::Real* energy_angle, unsigned long long* count_angle) {
+       rbmd::Real* flat_virial, rbmd::Real* energy_angle,
+       unsigned long long* count_angle,
+       STREAM_T stream) {
     unsigned int blocks_per_grid =
         (num_local_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    CHECK_KERNEL(ComputeAngleForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+    CHECK_KERNEL(ComputeAngleForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
         box, num_local_atoms, num_total_atoms, atoms_id, atom_id_to_idx,
         anglel_coeffs_k,
         anglel_coeffs_equilibrium, d_num_angle, d_angle_type, d_angle_atom1,
         d_angle_atom2, d_angle_atom3, angle_per_atom, px, py, pz, fx, fy, fz,
-        energy_angle, count_angle));
+        flat_virial, energy_angle, count_angle));
   }
 
 
 // force of dihedral
   void ComputeDihedralForceOp<device::DEVICE_GPU>::operator()(
        Box box,const rbmd::Id num_atoms,const rbmd::Id num_dihedrals,
-       const rbmd::Id* atom_id_to_idx,const rbmd::Real* dihedral_coeffs_k,
+       rbmd::AtomIndexMapView atom_id_to_idx,const rbmd::Real* dihedral_coeffs_k,
        const rbmd::Id* dihedral_coeffs_sign,
        const rbmd::Id* dihedral_coeffs_multiplicity, const rbmd::Id* dihedral_type,
        const rbmd::Id* dihedrallisti, const rbmd::Id* dihedrallistj,
       const rbmd::Id* dihedrallistk, const rbmd::Id* dihedrallistw,
       const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
       rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,rbmd::Real* flat_virial,
-      rbmd::Real* global_virial,rbmd::Real* energy_dihedral) {
+      rbmd::Real* global_virial,rbmd::Real* energy_dihedral,
+      STREAM_T stream) {
     unsigned int blocks_per_grid = (num_dihedrals + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    CHECK_KERNEL(ComputeDihedralForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+    CHECK_KERNEL(ComputeDihedralForce<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
         box, num_atoms,num_dihedrals, atom_id_to_idx, dihedral_coeffs_k,
         dihedral_coeffs_sign, dihedral_coeffs_multiplicity, dihedral_type,
         dihedrallisti, dihedrallistj, dihedrallistk, dihedrallistw, px, py, pz,
@@ -4171,7 +4323,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   void ComputeDihedralForcePerAtomOp<device::DEVICE_GPU>::operator()(
        Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
        const rbmd::Id* atoms_id,
-       const rbmd::Id* atom_id_to_idx, const rbmd::Real* dihedral_coeffs_k,
+       rbmd::AtomIndexMapView atom_id_to_idx, const rbmd::Real* dihedral_coeffs_k,
        const rbmd::Id* dihedral_coeffs_sign,
        const rbmd::Id* dihedral_coeffs_multiplicity, const int* d_num_dihedral,
        const int* d_dihedral_type, const rbmd::Id* d_dihedral_atom1,
@@ -4180,11 +4332,11 @@ __global__ void ComputeDihedralFourierForcePerAtom(
        const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
        rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
        rbmd::Real* flat_virial, rbmd::Real* energy_dihedral,
-       unsigned long long* count_dihedral) {
+       unsigned long long* count_dihedral, STREAM_T stream) {
     unsigned int blocks_per_grid =
         (num_local_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    CHECK_KERNEL(ComputeDihedralForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+    CHECK_KERNEL(ComputeDihedralForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
         box, num_local_atoms, num_total_atoms, atoms_id, atom_id_to_idx,
         dihedral_coeffs_k,
         dihedral_coeffs_sign, dihedral_coeffs_multiplicity, d_num_dihedral,
@@ -4195,17 +4347,18 @@ __global__ void ComputeDihedralFourierForcePerAtom(
 
   void ComputeDihedralOPLSForceOp<device::DEVICE_GPU>::operator()(
        Box box,const rbmd::Id num_atoms,const rbmd::Id num_dihedrals,
-       const rbmd::Id* atom_id_to_idx,const rbmd::Real* dihedral_coeffs_k1,
+       rbmd::AtomIndexMapView atom_id_to_idx,const rbmd::Real* dihedral_coeffs_k1,
       const rbmd::Real* dihedral_coeffs_k2,const rbmd::Real* dihedral_coeffs_k3,
        const rbmd::Real* dihedral_coeffs_k4, const rbmd::Id* dihedral_type,
        const rbmd::Id* dihedrallisti, const rbmd::Id* dihedrallistj,
       const rbmd::Id* dihedrallistk, const rbmd::Id* dihedrallistw,
       const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
       rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,rbmd::Real* flat_virial,
-      rbmd::Real* global_virial,rbmd::Real* energy_dihedral) {
+      rbmd::Real* global_virial,rbmd::Real* energy_dihedral,
+      STREAM_T stream) {
     unsigned int blocks_per_grid = (num_dihedrals + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    CHECK_KERNEL(ComputeDihedralOPLSForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+    CHECK_KERNEL(ComputeDihedralOPLSForce<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
         box, num_atoms,num_dihedrals, atom_id_to_idx, dihedral_coeffs_k1,
         dihedral_coeffs_k2, dihedral_coeffs_k3, dihedral_coeffs_k4,dihedral_type,
         dihedrallisti, dihedrallistj, dihedrallistk, dihedrallistw, px, py, pz,
@@ -4215,7 +4368,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
   void ComputeDihedralOPLSForcePerAtomOp<device::DEVICE_GPU>::operator()(
        Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
        const rbmd::Id* atoms_id,
-       const rbmd::Id* atom_id_to_idx, const rbmd::Real* dihedral_coeffs_k1,
+       rbmd::AtomIndexMapView atom_id_to_idx, const rbmd::Real* dihedral_coeffs_k1,
        const rbmd::Real* dihedral_coeffs_k2,
        const rbmd::Real* dihedral_coeffs_k3,
        const rbmd::Real* dihedral_coeffs_k4, const int* d_num_dihedral,
@@ -4225,12 +4378,12 @@ __global__ void ComputeDihedralFourierForcePerAtom(
        const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
        rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
        rbmd::Real* flat_virial, rbmd::Real* energy_dihedral,
-       unsigned long long* count_dihedral) {
+       unsigned long long* count_dihedral, STREAM_T stream) {
     unsigned int blocks_per_grid =
         (num_local_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     CHECK_KERNEL(
-        ComputeDihedralOPLSForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+        ComputeDihedralOPLSForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
             box, num_local_atoms, num_total_atoms, atoms_id, atom_id_to_idx,
             dihedral_coeffs_k1, dihedral_coeffs_k2, dihedral_coeffs_k3,
             dihedral_coeffs_k4, d_num_dihedral, d_dihedral_type,
@@ -4241,7 +4394,7 @@ __global__ void ComputeDihedralFourierForcePerAtom(
 
 void ComputeDihedralFourierForceOp<device::DEVICE_GPU>::operator()(
   Box box, const rbmd::Id num_atoms, const rbmd::Id num_dihedrals,
-  const rbmd::Id* atom_id_to_idx,
+  rbmd::AtomIndexMapView atom_id_to_idx,
   const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
   const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
   const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
@@ -4250,10 +4403,10 @@ void ComputeDihedralFourierForceOp<device::DEVICE_GPU>::operator()(
   const rbmd::Id* dihedrallistw, const rbmd::Real* px, const rbmd::Real* py,
   const rbmd::Real* pz,rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
   rbmd::Real* flat_virial, rbmd::Real* global_virial,
-  rbmd::Real* energy_dihedral) {
+  rbmd::Real* energy_dihedral, STREAM_T stream) {
   unsigned int blocks_per_grid = (num_dihedrals + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-  CHECK_KERNEL(ComputeDihedralFourierForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+  CHECK_KERNEL(ComputeDihedralFourierForce<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
       box, num_atoms,num_dihedrals, atom_id_to_idx, nterms,fourier_offsets,fourier_k,
       fourier_multiplicity,fourier_cos_shift, fourier_sin_shift, dihedral_type,
       dihedrallisti, dihedrallistj, dihedrallistk, dihedrallistw, px, py, pz,
@@ -4262,7 +4415,7 @@ void ComputeDihedralFourierForceOp<device::DEVICE_GPU>::operator()(
 
 void ComputeDihedralFourierForcePerAtomOp<device::DEVICE_GPU>::operator()(
   Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
-  const rbmd::Id* atoms_id, const rbmd::Id* atom_id_to_idx,
+  const rbmd::Id* atoms_id, rbmd::AtomIndexMapView atom_id_to_idx,
   const rbmd::Id* nterms, const rbmd::Id* fourier_offsets,
   const rbmd::Real* fourier_k, const rbmd::Id* fourier_multiplicity,
   const rbmd::Real* fourier_cos_shift, const rbmd::Real* fourier_sin_shift,
@@ -4272,12 +4425,12 @@ void ComputeDihedralFourierForcePerAtomOp<device::DEVICE_GPU>::operator()(
   int dihedral_per_atom, const rbmd::Real* px, const rbmd::Real* py,
   const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
   rbmd::Real* flat_virial, rbmd::Real* energy_dihedral,
-  unsigned long long* count_dihedral) {
+  unsigned long long* count_dihedral, STREAM_T stream) {
   unsigned int blocks_per_grid =
       (num_local_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   CHECK_KERNEL(
-      ComputeDihedralFourierForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+      ComputeDihedralFourierForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
           box, num_local_atoms, num_total_atoms, atoms_id, atom_id_to_idx,
           nterms, fourier_offsets, fourier_k, fourier_multiplicity,
           fourier_cos_shift, fourier_sin_shift, d_num_dihedral, d_dihedral_type,
@@ -4289,16 +4442,17 @@ void ComputeDihedralFourierForcePerAtomOp<device::DEVICE_GPU>::operator()(
   // force of improper
   void ComputeImproperHarmonicForceOp<device::DEVICE_GPU>::operator()(
     Box box,const rbmd::Id num_atoms,const rbmd::Id num_impropers,
-    const rbmd::Id* atom_id_to_idx,const rbmd::Real* improper_coeffs_k,
+    rbmd::AtomIndexMapView atom_id_to_idx,const rbmd::Real* improper_coeffs_k,
     const rbmd::Real* improper_coeffs_chi,const rbmd::Id* improper_type,
     const rbmd::Id* improperlisti,const rbmd::Id* improperlistj,
     const rbmd::Id* improperlistk,const rbmd::Id* improperlistw,
     const rbmd::Real* px,const rbmd::Real* py,const rbmd::Real* pz,
     rbmd::Real* fx,rbmd::Real* fy,rbmd::Real* fz,
-    rbmd::Real* flat_virial,rbmd::Real* energy_improper) {
+    rbmd::Real* flat_virial,rbmd::Real* energy_improper,
+    STREAM_T stream) {
       unsigned int blocks_per_grid = (num_impropers + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-      CHECK_KERNEL(ComputeImproperHarmonicForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+      CHECK_KERNEL(ComputeImproperHarmonicForce<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
           box,num_atoms,num_impropers, atom_id_to_idx, improper_coeffs_k,
           improper_coeffs_chi, improper_type,improperlisti, improperlistj,
           improperlistk, improperlistw, px, py, pz,fx, fy, fz,
@@ -4307,17 +4461,18 @@ void ComputeDihedralFourierForcePerAtomOp<device::DEVICE_GPU>::operator()(
 
 void ComputeImproperCVFFForceOp<device::DEVICE_GPU>::operator()(
   Box box,const rbmd::Id num_atoms,const rbmd::Id num_impropers,
-  const rbmd::Id* atom_id_to_idx,const rbmd::Real* improper_coeffs_k,
+  rbmd::AtomIndexMapView atom_id_to_idx,const rbmd::Real* improper_coeffs_k,
   const rbmd::Id* improper_coeffs_d, const rbmd::Id* improper_coeffs_n,
   const rbmd::Id* improper_type,
   const rbmd::Id* improperlisti,const rbmd::Id* improperlistj,
   const rbmd::Id* improperlistk,const rbmd::Id* improperlistw,
   const rbmd::Real* px,const rbmd::Real* py,const rbmd::Real* pz,
   rbmd::Real* fx,rbmd::Real* fy,rbmd::Real* fz,
-  rbmd::Real* flat_virial,rbmd::Real* energy_improper) {
+  rbmd::Real* flat_virial,rbmd::Real* energy_improper,
+  STREAM_T stream) {
   unsigned int blocks_per_grid = (num_impropers + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-  CHECK_KERNEL(ComputeImproperCVFFForce<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+  CHECK_KERNEL(ComputeImproperCVFFForce<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
       box,num_atoms,num_impropers, atom_id_to_idx, improper_coeffs_k,
       improper_coeffs_d,improper_coeffs_n,
       improper_type,improperlisti, improperlistj,
@@ -4328,7 +4483,7 @@ void ComputeImproperCVFFForceOp<device::DEVICE_GPU>::operator()(
 void ComputeImproperHarmonicPerAtomOp<device::DEVICE_GPU>::operator()(
   Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
   const rbmd::Id* atoms_id,
-  const rbmd::Id* atom_id_to_idx, const rbmd::Real* improper_coeffs_k,
+  rbmd::AtomIndexMapView atom_id_to_idx, const rbmd::Real* improper_coeffs_k,
   const rbmd::Real* improper_coeffs_chi, const int* d_num_improper,
   const int* d_improper_type, const rbmd::Id* d_improper_atom1,
   const rbmd::Id* d_improper_atom2, const rbmd::Id* d_improper_atom3,
@@ -4336,12 +4491,13 @@ void ComputeImproperHarmonicPerAtomOp<device::DEVICE_GPU>::operator()(
   const rbmd::Real* px, const rbmd::Real* py, const rbmd::Real* pz,
   rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
   rbmd::Real* flat_virial,
-  rbmd::Real* energy_improper, unsigned long long* count_improper) {
+  rbmd::Real* energy_improper, unsigned long long* count_improper,
+  STREAM_T stream) {
   unsigned int blocks_per_grid =
       (num_local_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   CHECK_KERNEL(
-      ComputeImproperHarmonicForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+      ComputeImproperHarmonicForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
           box, num_local_atoms, num_total_atoms, atoms_id, atom_id_to_idx,
           improper_coeffs_k,
           improper_coeffs_chi, d_num_improper, d_improper_type, d_improper_atom1,
@@ -4352,7 +4508,7 @@ void ComputeImproperHarmonicPerAtomOp<device::DEVICE_GPU>::operator()(
 void ComputeImproperCVFFPerAtomOp<device::DEVICE_GPU>::operator()(
   Box box, const rbmd::Id num_local_atoms, const rbmd::Id num_total_atoms,
   const rbmd::Id* atoms_id,
-  const rbmd::Id* atom_id_to_idx, const rbmd::Real* improper_coeffs_k,
+  rbmd::AtomIndexMapView atom_id_to_idx, const rbmd::Real* improper_coeffs_k,
   const rbmd::Id* improper_coeffs_d, const rbmd::Id* improper_coeffs_n,
   const int* d_num_improper, const int* d_improper_type,
   const rbmd::Id* d_improper_atom1, const rbmd::Id* d_improper_atom2,
@@ -4360,12 +4516,13 @@ void ComputeImproperCVFFPerAtomOp<device::DEVICE_GPU>::operator()(
   int improper_per_atom, const rbmd::Real* px, const rbmd::Real* py,
   const rbmd::Real* pz, rbmd::Real* fx, rbmd::Real* fy, rbmd::Real* fz,
   rbmd::Real* flat_virial,
-  rbmd::Real* energy_improper, unsigned long long* count_improper) {
+  rbmd::Real* energy_improper, unsigned long long* count_improper,
+  STREAM_T stream) {
   unsigned int blocks_per_grid =
       (num_local_atoms + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   CHECK_KERNEL(
-      ComputeImproperCVFFForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, 0>>>(
+      ComputeImproperCVFFForcePerAtom<<<blocks_per_grid, BLOCK_SIZE, 0, stream>>>(
           box, num_local_atoms, num_total_atoms, atoms_id, atom_id_to_idx,
           improper_coeffs_k,
           improper_coeffs_d, improper_coeffs_n, d_num_improper, d_improper_type,
@@ -4376,13 +4533,14 @@ void ComputeImproperCVFFPerAtomOp<device::DEVICE_GPU>::operator()(
 
 void ReduceVirialOp<device::DEVICE_GPU>::operator()(
 const rbmd::Id num_atoms,const rbmd::Id pitch,
-const rbmd::Real* d_flat_virial_atom,rbmd::Real* d_virial) {
+const rbmd::Real* d_flat_virial_atom,rbmd::Real* d_virial,
+STREAM_T stream) {
 
   const int num_components = 6;  //
   const int grid_size = num_components;  //
   const size_t shared_mem_size = BLOCK_SIZE * sizeof(rbmd::Real);
 
-   CHECK_KERNEL(reduce_virial_kernel<<<grid_size, BLOCK_SIZE, shared_mem_size>>>(
+   CHECK_KERNEL(reduce_virial_kernel<<<grid_size, BLOCK_SIZE, shared_mem_size, stream>>>(
       num_atoms,pitch ,d_flat_virial_atom,d_virial));
 }
 
@@ -4392,7 +4550,7 @@ void ComputeSpecialLJCutCoulForceUserOp<device::DEVICE_GPU>::operator()(
   const rbmd::Real rbsog_sigma,const rbmd::Real rbsog_b, const rbmd::Id rbsog_mmax,
   const rbmd::Real rbsog_w0,const rbmd::Real* taylor_coeff,
   const rbmd::Id* atoms_type, const rbmd::Id* atoms_id,
-  const rbmd::Real* sigma, const rbmd::Real* eps,
+  const rbmd::Real* sigma, const rbmd::Real* eps, bool geometric_lj_mixing,
   const rbmd::Id* start_id, const rbmd::Id* end_id, const rbmd::Id* id_verletlist,
   const int* nspecial, const rbmd::Id* special, int maxspecial,
   rbmd::Real w12, rbmd::Real w13, rbmd::Real w14,
@@ -4405,7 +4563,7 @@ void ComputeSpecialLJCutCoulForceUserOp<device::DEVICE_GPU>::operator()(
   CHECK_KERNEL(ComputeSpecialLJCutCoulForceUserKernel<<<blocks, BLOCK_SIZE, 0, 0>>>(
       box, cut_off, num_atoms, qqr2e,rbsog_sigma,
       rbsog_b, rbsog_mmax, rbsog_w0,taylor_coeff,
-      atoms_type, atoms_id, sigma, eps, start_id, end_id, id_verletlist,
+      atoms_type, atoms_id, sigma, eps, geometric_lj_mixing, start_id, end_id, id_verletlist,
       nspecial, special, maxspecial, w12, w13, w14,
       charge, px, py, pz, fx, fy, fz, flat_virial, total_evdwl, total_ecoul
   ));

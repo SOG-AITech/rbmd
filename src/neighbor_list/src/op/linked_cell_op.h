@@ -14,7 +14,8 @@ template <typename DEVICE>
 struct AssignAtomsToCellOp {
   void operator()(rbmd::Real* px, rbmd::Real* py, rbmd::Real* pz, Box* box,
                   LinkedCellDeviceDataPtr* linked_cell, Cell* cells,
-                  rbmd::Id* per_atom_cell_id, rbmd::Id total_atoms_num);
+                  rbmd::Id* per_atom_cell_id, rbmd::Id native_atoms_num,
+                  rbmd::Id total_atoms_num);
 };
 
 template <typename DEVICE>
@@ -22,6 +23,17 @@ struct ComputeCellRangesIndicesOp {
   void operator()(rbmd::Id* sorted_cell_index,
                   rbmd::Id* d_in_atom_list_start_index,
                   rbmd::Id* d_in_atom_list_end_index, rbmd::Id num_atoms);
+};
+
+template <typename DEVICE>
+struct BuildAtomicCellListOp {
+  void operator()(const rbmd::Id* per_atom_cell_id, rbmd::Id total_atoms,
+                  rbmd::Id total_cells, rbmd::Id* cell_start,
+                  rbmd::Id* cell_end, rbmd::Id* sorted_cell_id,
+                  rbmd::Id* sorted_atom_indices, const rbmd::Real* px,
+                  const rbmd::Real* py, const rbmd::Real* pz,
+                  rbmd::Real* sorted_px, rbmd::Real* sorted_py,
+                  rbmd::Real* sorted_pz);
 };
 
 // template <typename DEVICE>
@@ -41,7 +53,8 @@ template <>
 struct AssignAtomsToCellOp<device::DEVICE_GPU> {
   void operator()(rbmd::Real* px, rbmd::Real* py, rbmd::Real* pz, Box* box,
                   LinkedCellDeviceDataPtr* linked_cell, Cell* cells,
-                  rbmd::Id* per_atom_cell_id, rbmd::Id total_atoms_num);
+                  rbmd::Id* per_atom_cell_id, rbmd::Id native_atoms_num,
+                  rbmd::Id total_atoms_num);
 };
 
 template <>
@@ -49,6 +62,17 @@ struct ComputeCellRangesIndicesOp<device::DEVICE_GPU> {
   void operator()(rbmd::Id* sorted_cell_index,
                   rbmd::Id* d_in_atom_list_start_index,
                   rbmd::Id* d_in_atom_list_end_index, rbmd::Id num_atoms);
+};
+
+template <>
+struct BuildAtomicCellListOp<device::DEVICE_GPU> {
+  void operator()(const rbmd::Id* per_atom_cell_id, rbmd::Id total_atoms,
+                  rbmd::Id total_cells, rbmd::Id* cell_start,
+                  rbmd::Id* cell_end, rbmd::Id* sorted_cell_id,
+                  rbmd::Id* sorted_atom_indices, const rbmd::Real* px,
+                  const rbmd::Real* py, const rbmd::Real* pz,
+                  rbmd::Real* sorted_px, rbmd::Real* sorted_py,
+                  rbmd::Real* sorted_pz);
 };
 
 // template <>

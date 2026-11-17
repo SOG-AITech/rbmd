@@ -1,5 +1,6 @@
 #pragma once
 #include "../../common/device_types.h"
+#include "../../../common/rbmd_define.h"
 #include "../../common/types.h"
 #include "../../data_manager/include/model/box.h"
 
@@ -301,7 +302,8 @@ struct ComputePnumberChargeStructureFactorOp<device::DEVICE_GPU>
      const rbmd::Real* py,
      const rbmd::Real* pz,
      rbmd::Real* density_real,
-     rbmd::Real* density_imag);
+     rbmd::Real* density_imag,
+     STREAM_T stream = nullptr);
 };
 
 template <>
@@ -316,7 +318,9 @@ struct ComputeRBEForceOp<device::DEVICE_GPU>
      const rbmd::Real* p_sample_x,const rbmd::Real* p_sample_y,
      const rbmd::Real* p_sample_z,const rbmd::Real* px,
      const rbmd::Real* py,const rbmd::Real* pz,
-     rbmd::Real* fx,rbmd::Real* fy,rbmd::Real* fz);
+     rbmd::Real* fx,rbmd::Real* fy,rbmd::Real* fz,
+     STREAM_T stream = nullptr,
+     const rbmd::Real* mode_weights = nullptr);
 };
 
   template <>
@@ -330,7 +334,9 @@ struct ComputeRBEForceOp<device::DEVICE_GPU>
     const rbmd::Real* real_array,const rbmd::Real* imag_array,
     const rbmd::Real* p_sample_x,const rbmd::Real* p_sample_y,
     const rbmd::Real* p_sample_z,rbmd::Real* virial_tensor,
-    rbmd::Real* energy);
+    rbmd::Real* energy,
+    STREAM_T stream = nullptr,
+     const rbmd::Real* mode_weights = nullptr);
   };
 
   template <>

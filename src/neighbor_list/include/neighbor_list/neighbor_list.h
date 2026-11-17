@@ -1,5 +1,6 @@
 #pragma once
 #include <thrust/device_vector.h>
+#include <memory>
 
 #include "common/types.h"
 
@@ -12,6 +13,8 @@ class NeighborList {
   thrust::device_vector<rbmd::Id> _d_neighbor_num{};  // 每个原子的邻居数量
   thrust::device_vector<rbmd::Id>
       _d_max_neighbor_num{};  // 每个原子的最大邻居容量
+  // Full/RBL Full 使用统一固定宽度；Half 路径仍使用上面的 per-atom 容量。
+  rbmd::Id _max_neighbor_capacity = 0;
   rbmd::Id _h_total_max_neighbor_num = 0;
   thrust::device_vector<rbmd::Id>
       _d_neighbors{};  // 每个原子的邻居列表  when use rbl is: s_neighbor
@@ -24,7 +27,14 @@ class NeighborList {
                              // sample * active_atoms + atom
   thrust::device_vector<rbmd::Id>
       _d_random_neighbor_num{};  // 概率原因，每个原子的随机邻居可能不到neighbor_sample_num个，这里记录每个原子随机挑选的邻居个数
+  thrust::device_vector<rbmd::Real>
+      _d_random_neighbor_weight{};  // Per-atom unbiased shell estimator weight.
+  thrust::device_vector<rbmd::Id> _d_random_neighbor_population{}; // fixed-p physical unique M
   rbmd::Id _selection_frequency = 0;
+  std::shared_ptr<NeighborList> _rbl_candidate_list{};
+  bool _rbl_fused_sampling = false;
+  bool _rbl_candidate_implicit_offsets = false;
+  rbmd::Id _rbl_sample_epoch = 0;
   void print(const std::string& filename);
   void resize(rbmd::Id new_total_atoms_num);
 };

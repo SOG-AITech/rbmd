@@ -9,7 +9,8 @@ template <typename DEVICE>
 struct HandleDomainLeavingAtomsOneDimOp {
   void operator()(rbmd::Real* d_start_region, rbmd::Real* d_end_region,
                   rbmd::Real* px, rbmd::Real* py, rbmd::Real* pz,
-                  rbmd::Real* pos_to_modify, Box d_box, rbmd::Id dim,
+                  rbmd::Real* pos_to_modify, rbmd::Id* image_to_modify,
+                  rbmd::Real* unwrapped_to_modify, Box d_box, rbmd::Id dim,
                   rbmd::Real shift, rbmd::Id total_atoms_num);
 };
 
@@ -27,24 +28,6 @@ struct PopulateHaloOp {
                   rbmd::Id* atoms_type = nullptr,
                   rbmd::Id* halo_atoms_id = nullptr,
                   rbmd::Id* halo_atoms_type = nullptr);
-};
-
-template <typename DEVICE>
-struct MarkLeavingAtomsInRegionOp {
-  void operator()(rbmd::Real* px, rbmd::Real* py, rbmd::Real* pz,
-                  PositionInfo* d_position_infos,
-                  rbmd::Id mark_atoms_num, int* leaving_flags);
-};
-
-
-
-
-
-template <typename DEVICE>
-struct ProcessLeavingAtomOp {
-  void operator()(rbmd::Real* p_px, rbmd::Real* p_py,
-                  rbmd::Real* p_pz, PositionInfo* d_position_infos,
-                   rbmd::Id total_leaving, Box d_domain);
 };
 
 template <typename DEVICE>
@@ -81,7 +64,8 @@ template <>
 struct HandleDomainLeavingAtomsOneDimOp<device::DEVICE_GPU> {
   void operator()(rbmd::Real* d_start_region, rbmd::Real* d_end_region,
                   rbmd::Real* px, rbmd::Real* py, rbmd::Real* pz,
-                  rbmd::Real* pos_to_modify, Box d_box, rbmd::Id dim,
+                  rbmd::Real* pos_to_modify, rbmd::Id* image_to_modify,
+                  rbmd::Real* unwrapped_to_modify, Box d_box, rbmd::Id dim,
                   rbmd::Real shift, rbmd::Id total_atoms_num);
 };
 
@@ -99,22 +83,6 @@ struct PopulateHaloOp<device::DEVICE_GPU> {
                   rbmd::Id* atoms_type = nullptr,
                   rbmd::Id* halo_atoms_id = nullptr,
                   rbmd::Id* halo_atoms_type = nullptr);
-};
-
-template <>
-struct MarkLeavingAtomsInRegionOp<device::DEVICE_GPU> {
-  void operator()(rbmd::Real* px, rbmd::Real* py, rbmd::Real* pz,
-                  PositionInfo* d_position_infos,
-                  rbmd::Id native_atoms_num, int* leaving_flags);
-};
-
-
-
-template <>
-struct ProcessLeavingAtomOp<device::DEVICE_GPU> {
-  void operator()(rbmd::Real* p_px, rbmd::Real* p_py,
-                  rbmd::Real* p_pz, PositionInfo* d_position_infos,
-                   rbmd::Id total_leaving, Box d_domain);
 };
 
 template <>

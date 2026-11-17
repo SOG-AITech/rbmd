@@ -44,6 +44,14 @@ if(USE_MPI)
     list(APPEND depend_names "parallel")
 endif()
 
+# The experimental LBVH source is not wired into any builder yet and depends on
+# an external <neighbor/neighbor.h> package that is not part of this project.
+# Keep the prototype in the source tree without letting the recursive *.cu glob
+# make the production neighbor-list target depend on an unfinished backend.
+set_source_files_properties(
+    "${CMAKE_CURRENT_LIST_DIR}/src/op/rocm/lbvh_neighbor_list_op.hip.cu"
+    PROPERTIES HEADER_FILE_ONLY TRUE
+)
 
 
 cpp_library(

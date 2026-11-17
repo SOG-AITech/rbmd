@@ -1,5 +1,9 @@
+#pragma once
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <fstream>
+#include <stdexcept>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
@@ -14,6 +18,7 @@
 #endif
 
 #include "output/include/Logger.hpp"
+#include "common/mpi_root_guard.hpp"
 
 class TimingStatistics {
 private:
@@ -43,31 +48,12 @@ private:
         }
         
         double stddev() const {
-            return std::sqrt(variance());
+            return std::sqrt(std::max(0.0, variance()));
         }
     };
     
     std::unordered_map<std::string, Stats> categories;
-    double total_time = 0.0;
 
-    static double max_rank_average(double local_average) {
-#ifdef USE_MPI
-        int initialized = 0;
-        int finalized = 0;
-        MPI_Initialized(&initialized);
-        if (initialized) {
-            MPI_Finalized(&finalized);
-        }
-        if (initialized && !finalized) {
-            double global_max = 0.0;
-            MPI_Allreduce(&local_average, &global_max, 1, MPI_DOUBLE, MPI_MAX,
-                          MPI_COMM_WORLD);
-            return global_max;
-        }
-#endif
-        return local_average;
-    }
-    
     // Private constructor for singleton
     TimingStatistics() = default;
     
@@ -85,63 +71,92 @@ public:
     // Record time for a category
     void record(const std::string& category, double time_seconds) {
         categories[category].update(time_seconds);
-        total_time += time_seconds;
     }
 
-  void print_summary() const {
-      // Calculate average total time across all categories
-      double avg_total = 0.0;
-      for (const auto& category_pair : categories) {
-        avg_total += category_pair.second.avg();
-      }
-
-      // Build output string
-      std::stringstream ss;
-      ss << "\n";
-      ss << "┌──────────────────┬──────────────────┐\n";
-      ss << "│     Category     │ Max Avg Time (s) │\n";
-      ss << "├──────────────────┼──────────────────┤\n";
-
-      // Set output format
-      ss << std::fixed << std::setprecision(6);
-
-      // Define output order
+  void print_summary(const std::string& context = "") const {
+      std::ostringstream ss;
+      std::ostringstream table;
+      table << "\nCategory                         | Max Avg Time (s)\n";
+      table << std::fixed << std::setprecision(9);
+      ss << "# RBMD timing; seconds; " << context << '\n'
+         << "# Step-Wall: device synchronized before/after integration; excludes external output.\n"
+         << "# Loop wall includes output/diagnostic overhead; frozen evaluations are not MD steps.\n"
+         << "# *KernelGPU / Long-ComputeGPU: isolated event intervals, exclude MPI and transfers.\n"
+         << "# *Workflow-Wall: synchronized inclusive work, including internal MPI/transfers.\n"
+         << "# *OverlapSpan and legacy categories are diagnostic spans, not additive stage costs.\n"
+         << "# Rank means are aggregated separately; never sum maxima of different stages.\n"
+         << "category,count_min,count_max,rank_mean_min_s,rank_mean_avg_s,rank_mean_max_s\n";
+      ss << std::setprecision(17);
       const std::vector<std::string> order = {
-        "Neighbor-List", "RBL-CacheCheck", "RBL-CoordinateExchange",
+        "Step-Wall", "Frozen-Evaluation-Wall", "Force-Evaluation-Wall", "Pair-Workflow-Wall", "Kspace-Workflow-Wall",
+        "Pair-KernelGPU", "RBL-CorrectionGPU", "Force-AssembleGPU",
+        "Long-ComputeGPU", "RBE-VirialEnergyGPU",
+        "Pair-OverlapSpan", "Kspace-OverlapSpan", "Bonded-OverlapSpan",
+        "Neighbor-List", "RBL-CacheCheck", "RBL-DirectSample", "RBL-RebuildExchange", "RBL-CoordinateExchange",
         "RBL-CandidateRebuild", "RBL-FilterSample", "Short-Range",
         "RBL-PairKernel", "RBL-LocalReduction", "RBL-MPIAllreduce",
         "RBL-CorrectionApply", "VL-PairKernel", "Long-Range", "Bond", "Angle",
-        "Dihedral", "Improper", "SHAKE-A-Cache", "SHAKE-A-InHalo",
+        "Dihedral", "Improper", "Bonded", "Force-Step",
+        "RBE-SampleHost", "RBE-MPILaunch", "RBE-SampleH2D", "RBE-RhoD2H", "RBE-RhoH2D", "RBE-EnergyD2H", "RBE-RhoGPU", "RBE-MPIWait", "RBE-ForceGPU",
+        "RBL-CorrectionMPIWait", "Force-EnergyMPIWait", "SHAKE-A-Cache", "SHAKE-A-InHalo",
         "SHAKE-A-Kernel", "SHAKE-A-Apply", "SHAKE-A-OutHalo",
         "SHAKE-B-Cache", "SHAKE-B-InHalo", "SHAKE-B-Kernel",
         "SHAKE-B-Apply", "SHAKE-B-OutHalo"
     };
 
-      // 按照 order 的顺序输出
       for (const auto& section : order) {
-        auto it = categories.find(section);
-        const double local_average =
-            it != categories.end() ? it->second.avg() : 0.0;
-        const double reported_average = max_rank_average(local_average);
-        if (reported_average > 0.0) {
-
-          ss << "│ " << std::setw(16) << std::left << section
-             << " │ " << std::setw(16) << std::right << reported_average
-             << " │\n";
+        const auto it = categories.find(section);
+        const bool present = it != categories.end() && it->second.count;
+        const double count = present ? static_cast<double>(it->second.count) : 0;
+        const double mean = present ? it->second.avg() : 0;
+        double lo[2] = {count, present ? mean : std::numeric_limits<double>::infinity()};
+        double hi[2] = {count, mean};
+        double sums[2] = {present ? 1.0 : 0.0, mean};
+#ifdef USE_MPI
+        int initialized = 0, finalized = 0;
+        MPI_Initialized(&initialized);
+        if (initialized) MPI_Finalized(&finalized);
+        if (initialized && !finalized) {
+          MPI_Allreduce(MPI_IN_PLACE, lo, 2, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+          MPI_Allreduce(MPI_IN_PLACE, hi, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+          MPI_Allreduce(MPI_IN_PLACE, sums, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        }
+#endif
+        if (sums[0] > 0) {
+          ss << section << ',' << lo[0] << ',' << hi[0] << ',' << lo[1] << ','
+             << sums[1] / sums[0] << ',' << hi[1] << '\n';
+          table << "│ " << std::setw(32) << std::left << section
+                << " │ " << std::setw(16) << std::right << hi[1] << " │\n";
         }
       }
+      Logger::Instance().info("{}", table.str());
+      if (rbmd::mpi::ShouldWriteRootOnlyOutput()) {
+        std::ofstream out("time.txt", std::ios::trunc);
+        if (!out) throw std::runtime_error("Cannot create time.txt");
+        out << ss.str();
+        if (!out) throw std::runtime_error("Failed writing time.txt");
+      }
+    }
 
-      // 表格底部
-      ss << "└──────────────────┴──────────────────┘\n";
-
-      // Log using spdlog
-      Logger::Instance().info(ss.str().c_str());
+    void write_csv(const std::string& path) const {
+        std::ofstream out(path, std::ios::trunc);
+        if (!out) throw std::runtime_error("Cannot write timing CSV: " + path);
+        out << "category,count,sum_seconds,mean_seconds,min_seconds,max_seconds\n";
+        out << std::setprecision(17);
+        std::vector<std::string> names;
+        for (const auto& item : categories) names.push_back(item.first);
+        std::sort(names.begin(), names.end());
+        for (const auto& name : names) {
+            const auto& s = categories.at(name);
+            out << name << ',' << s.count << ',' << s.sum << ',' << s.avg()
+                << ',' << s.min << ',' << s.max << '\n';
+        }
+        if (!out) throw std::runtime_error("Failed writing timing CSV: " + path);
     }
 
     // Reset statistics
     void reset() {
         categories.clear();
-        total_time = 0.0;
     }
 };
 
@@ -152,5 +167,5 @@ public:
         code_block \
         auto end = std::chrono::high_resolution_clock::now(); \
         std::chrono::duration<double> duration = end - start; \
-        TimingStatistics::getInstance().record(section_name, duration.count()); \
+        TimingStatistics::Instance().record(section_name, duration.count()); \
     } while(0)

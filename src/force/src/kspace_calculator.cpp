@@ -1,9 +1,12 @@
+#include "common/revision_timing.h"
 #include "kspace_calculator.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <experimental/filesystem>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -24,12 +27,6 @@
 
 namespace {
 namespace fs = std::experimental::filesystem;
-
-// TODO(gyf): Delete this legacy exact-kspace-energy trigger once the new
-// batched ComputeKspaceEnergy path is numerically validated and either adopted
-// as the default diagnostic path or removed entirely.
-constexpr bool kEnableLegacyExactKspaceEnergyPath = false;
-constexpr bool kEnableBatchedExactKspaceEnergyPath = true;
 
 std::string SafeCurrentPath() {
   try {
@@ -76,6 +73,14 @@ rbmd::Real ComputeRbeGaussianSum(const Box& box, rbmd::Real alpha) {
   }
   return h.x * h.y * h.z - rbmd::Real{1.0};
 }
+
+void RecordRbeEventTiming(const char* category, EVENT_T begin, EVENT_T end) {
+  float elapsed_ms = 0.0f;
+  rbmd::revision::RequireGpu(EVENT_SYNC(end));
+  rbmd::revision::RequireGpu(EVENT_ELAPSED_TIME(&elapsed_ms, begin, end));
+  TimingStatistics::Instance().record(
+      category, static_cast<double>(elapsed_ms) * 1.0e-3);
+}
 }  // namespace
 
 KSpaceCalculator::KSpaceCalculator()
@@ -102,11 +107,13 @@ KSpaceCalculator::KSpaceCalculator()
   }
 }
 
+KSpaceCalculator::~KSpaceCalculator() { ReleaseRbeAsyncResources(); }
+
 void KSpaceCalculator::SetAlphaFromManual(rbmd::Real alpha)
 {
-  if (alpha <= 0.0) {
+  if (!std::isfinite(alpha) || alpha <= 0.0) {
     Logger::Instance().error(
-        "\033[31m Coulomb alpha override must be > 0. Current value: {}.\033[0m",
+        "\033[31m Coulomb alpha override must be finite and > 0. Current value: {}.\033[0m",
         alpha);
     exit(EXIT_FAILURE);
   }
@@ -143,7 +150,9 @@ void KSpaceCalculator::DeriveAlphaFromAccuracy(rbmd::Real relative_accuracy_user
   }
 
   const auto box = DataManager::getInstance().getMDData()->_box;
-  const double volume = CalculateVolume(*box);
+  // Match global atom/charge counts so alpha does not depend on MPI decomposition.
+  const Box periodic_box = GetPeriodicBoxForKspace(*box);
+  const double volume = CalculateVolume(periodic_box);
   const auto local_num_atoms = *(_structure_info_data->_num_atoms);
   const double global_num_atoms = static_cast<double>(GetGlobalIdSum(local_num_atoms));
 
@@ -169,10 +178,17 @@ void KSpaceCalculator::Init()
     _coulomb_type = config->Get<std::string>("type", "hyper_parameters", "coulomb");
 
     auto derive_alpha_from_coulomb_config = [&]() {
-      if (config->PathExists({"hyper_parameters", "coulomb", "alpha"})) {
+      const auto& coulomb = config->GetJsonNode("hyper_parameters").at("coulomb");
+      if (coulomb.contains("debug_alpha") && !coulomb.at("debug_alpha").is_boolean())
+        throw std::invalid_argument("Coulomb debug_alpha must be a boolean");
+      if (coulomb.value("debug_alpha", false)) {
+        if (!coulomb.contains("alpha") || !coulomb.at("alpha").is_number())
+          throw std::invalid_argument("Coulomb debug_alpha=true requires a numeric alpha");
         SetAlphaFromManual(
             config->Get<rbmd::Real>("alpha", "hyper_parameters", "coulomb"));
       } else {
+        if (coulomb.contains("alpha"))
+          throw std::invalid_argument("Manual Coulomb alpha requires debug_alpha=true; remove alpha to use automatic derivation");
         if (!config->PathExists({"hyper_parameters", "coulomb" ,"accuracy"})) {
           Logger::Instance().error(
               "\033[31m Coulomb accuracy must be defined under "
@@ -219,6 +235,33 @@ void KSpaceCalculator::Init()
     if("RBE" == _coulomb_type) {
       derive_alpha_from_coulomb_config();
       _RBE_P = config->Get<rbmd::Id>("coulomb_sample_num", "hyper_parameters", "coulomb");
+      if (_RBE_P <= 0) throw std::invalid_argument("RBE coulomb_sample_num must be positive");
+      _rbe_tail_samples = _RBE_P;
+      if (config->PathExists({"hyper_parameters", "coulomb", "rbe_low_modes"}))
+        _rbe_low_modes_enabled = config->Get<bool>("rbe_low_modes", "hyper_parameters", "coulomb");
+      if (_rbe_low_modes_enabled) {
+        _rbe_K_max = config->Get<double>("K_max", "hyper_parameters", "coulomb");
+        unsigned int seed = std::random_device{}();
+        if (config->PathExists({"hyper_parameters", "coulomb", "random_seed"})) {
+          const auto value = config->Get<std::uint64_t>("random_seed", "hyper_parameters", "coulomb");
+          if (value > std::numeric_limits<unsigned int>::max())
+            throw std::invalid_argument("RBE random_seed exceeds UINT_MAX");
+          seed = static_cast<unsigned int>(value);
+        }
+#ifdef USE_MPI
+        MPI_CHECK(MPI_Bcast(&seed, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD));
+#endif
+        _rbe_low_generator.seed(seed);
+        Logger::Instance().info("RBE low-mode random_seed: {}", seed);
+        PrepareRbeLowModes(GetPeriodicBoxForKspace(*_box));
+      }
+      _rhok_real_redue.resize(_RBE_P);
+      _rhok_image_redue.resize(_RBE_P);
+      _d_rbe_energy.resize(1);
+      _P_Sample_x.resize(_RBE_P);
+      _P_Sample_y.resize(_RBE_P);
+      _P_Sample_z.resize(_RBE_P);
+      InitializeRbeAsyncResources();
 
       //
       bool energy_rbe_flag = config->PathExists({"hyper_parameters", "coulomb" ,"energy_rbe_flag"});
@@ -246,7 +289,7 @@ void KSpaceCalculator::Init()
       "         g_ewald : {}\n"
       "         alpha : {}\n"
       "         rbe_sample_number : {}\n"
-      "         rbe_sampling : full periodic box\n",
+      "         rbe_sampling : full simulation box\n",
        _coulomb_type, _manual_alpha_override ? "manual" : "auto",
        _relative_accuracy_user, _g_ewald, _alpha, _RBE_P);
     }
@@ -259,7 +302,7 @@ void KSpaceCalculator::Init()
         exit(EXIT_FAILURE);
       }
 
-      for (const char* legacy_key : {"accuracy", "rbsog_b",
+      for (const char* legacy_key : {"alpha", "debug_alpha", "accuracy", "rbsog_b",
                                      "rbsog_sigma", "rbsog_Mmax",
                                      "rbsog_Kcut"}) {
         if (config->PathExists({"hyper_parameters", "coulomb", legacy_key})) {
@@ -289,13 +332,7 @@ void KSpaceCalculator::Init()
       _rbsog_Mmax = preset.mmax;
       _RBE_P = config->Get<rbmd::Id>("coulomb_sample_num", "hyper_parameters", "coulomb"); // This is 'P'
       _rbsog_Kcut = 1;
-      if (config->PathExists(
-            {"hyper_parameters", "coulomb", "alpha"})) {
-        SetAlphaFromManual(config->Get<rbmd::Real>(
-          "alpha", "hyper_parameters", "coulomb"));
-      } else {
-        DeriveAlphaFromAccuracy(preset.target_accuracy);
-      }
+      DeriveAlphaFromAccuracy(preset.target_accuracy);
 
       _RBE_P = ((_RBE_P + 15) / 16) * 16;
 
@@ -320,8 +357,7 @@ void KSpaceCalculator::Init()
       "         rbsog_Mmax : {}\n"
       "         rbsog_Kcut : {}\n"
       "         rbsog_sample_number : {}\n",
-      _coulomb_type, _manual_alpha_override ? "manual" : "rbsog_level_auto",
-      raw_level, preset.target_accuracy,
+      _coulomb_type, "rbsog_level_auto", raw_level, preset.target_accuracy,
       _alpha, _rbsog_b, _rbsog_sigma, _rbsog_Mmax, _rbsog_Kcut, _RBE_P);
     }
     //
@@ -356,6 +392,7 @@ void KSpaceCalculator::Init()
 
 void KSpaceCalculator::Execute()
 {
+    rbmd::revision::WorkflowTimer revision_kspace_wall("Kspace-Workflow-Wall");
     if ("RBE" == _coulomb_type)
     {
         ComputeRBE();
@@ -374,18 +411,18 @@ void KSpaceCalculator::Execute()
 
 void KSpaceCalculator::EvaluatePotentialEnergy()
 {
-  auto num_atoms = *(_structure_info_data->_num_atoms);
-  const rbmd::Id global_num_atoms = GetGlobalIdSum(num_atoms);
-
   auto unit = DataManager::getInstance().getConfigData()->Get
 <std::string>("unit", "init_configuration", "read_data");
   if (ParseUnit(unit) == UNIT::LJ) {
+    const auto num_atoms = *(_structure_info_data->_num_atoms);
+    const rbmd::Id global_num_atoms = GetGlobalIdSum(num_atoms);
     _e_kspace = _e_kspace / global_num_atoms;
   }
 }
 
 void KSpaceCalculator::ComputeEwald()
 {
+    if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
     auto start = std::chrono::high_resolution_clock::now();
     auto num_atoms = *(_structure_info_data->_num_atoms);
     const Box force_box = GetPeriodicBoxForKspace(*_box);
@@ -414,6 +451,7 @@ void KSpaceCalculator::ComputeEwald()
         thrust::raw_pointer_cast(_device_data->_d_force_kspace_z.data()),
         thrust::raw_pointer_cast(_device_data->_d_flat_virial_kspace.data()));
 
+    if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<rbmd::Real> duration = end - start;
     TimingStatistics::Instance().record("Long-Range", duration.count());
@@ -529,39 +567,115 @@ void KSpaceCalculator::ComputeChargeStructureFactorEwald(
 }
 
 
+void KSpaceCalculator::PrepareRbeLowModes(const Box& box) {
+  if (!_rbe_low_modes_enabled) return;
+  if (!_rbe_low_modes.Setup({{double(box._length[0]), double(box._length[1]),
+                              double(box._length[2])}}, double(_alpha), _rbe_K_max)) return;
+  const auto count = _rbe_low_modes.Low().size() + static_cast<std::size_t>(_rbe_tail_samples);
+  // Packed sample broadcasts and rho reductions use int MPI counts.
+  if (count > static_cast<std::size_t>(std::numeric_limits<int>::max() / 4) ||
+      count > static_cast<std::size_t>(std::numeric_limits<rbmd::Id>::max()))
+    throw std::invalid_argument("RBE low-mode count exceeds supported buffer size");
+  const bool initialized = _rbe_async_resources_ready;
+  const bool count_changed = count != static_cast<std::size_t>(_RBE_P);
+  if (initialized && count_changed) {
+    CHECK_RUNTIME(STREAM_SYNC(_rbe_stream));
+    ReleaseRbeAsyncResources();
+  }
+  _RBE_P = static_cast<rbmd::Id>(count);
+  _P_Sample_x.resize(count); _P_Sample_y.resize(count); _P_Sample_z.resize(count);
+  _rhok_real_redue.resize(count); _rhok_image_redue.resize(count);
+  _rbe_mode_weights.resize(count);
+  if (initialized && !_rbe_async_resources_ready) InitializeRbeAsyncResources();
+  if (!initialized || count_changed)
+    Logger::Instance().info("RBE low modes: K_max={}, deterministic={}, tail_samples={}, tail_mass={}",
+        _rbe_K_max, _rbe_low_modes.Low().size(), _rbe_tail_samples, _rbe_low_modes.TailMass());
+}
+
+void KSpaceCalculator::InitializeRbeAsyncResources() {
+  if (_rbe_async_resources_ready) {
+    return;
+  }
+  if (_RBE_P <= 0) {
+    throw std::runtime_error("RBE async resources require a positive sample count");
+  }
+
+  _h_rbe_sample_x.resize(_RBE_P);
+  _h_rbe_sample_y.resize(_RBE_P);
+  _h_rbe_sample_z.resize(_RBE_P);
+  const std::size_t sample_bytes =
+      static_cast<std::size_t>(_rbe_low_modes_enabled ? 4 : 3) * _RBE_P * sizeof(rbmd::Real);
+  const std::size_t rho_bytes =
+      static_cast<std::size_t>(2) * _RBE_P * sizeof(rbmd::Real);
+
+  const bool allocated =
+      CHECK_RUNTIME(MALLOCHOST(reinterpret_cast<void**>(&_h_rbe_samples),
+                               sample_bytes)) &&
+      CHECK_RUNTIME(MALLOCHOST(reinterpret_cast<void**>(&_h_rbe_rho),
+                               rho_bytes)) &&
+      CHECK_RUNTIME(MALLOCHOST(reinterpret_cast<void**>(&_h_rbe_energy),
+                               sizeof(rbmd::Real))) &&
+      CHECK_RUNTIME(NEW_EVENT(&_rbe_rho_begin_event)) &&
+      CHECK_RUNTIME(NEW_EVENT(&_rbe_rho_done_event)) &&
+      CHECK_RUNTIME(NEW_EVENT(&_rbe_force_begin_event)) &&
+      CHECK_RUNTIME(NEW_EVENT(&_rbe_force_done_event));
+  if (!allocated) {
+    ReleaseRbeAsyncResources();
+    throw std::runtime_error("Failed to allocate persistent RBE async resources");
+  }
+  _h_rbe_energy[0] = rbmd::Real{0};
+  _rbe_async_phase = RbeAsyncPhase::Idle;
+  _rbe_async_resources_ready = true;
+}
+
+void KSpaceCalculator::ReleaseRbeAsyncResources() {
+  if (_rbe_async_phase == RbeAsyncPhase::ReductionInFlight) {
+#ifdef USE_MPI
+    int initialized = 0;
+    int finalized = 0;
+    MPI_Initialized(&initialized);
+    if (initialized) {
+      MPI_Finalized(&finalized);
+    }
+    if (initialized && !finalized && _rbe_reduce_request != MPI_REQUEST_NULL) {
+      MPI_Wait(&_rbe_reduce_request, MPI_STATUS_IGNORE);
+    }
+#endif
+  } else if (_rbe_async_phase == RbeAsyncPhase::RhoQueued ||
+             _rbe_async_phase == RbeAsyncPhase::ForceQueued) {
+    STREAM_SYNC(_rbe_stream);
+  }
+
+  if (_rbe_rho_begin_event) EVENT_DESTROY(_rbe_rho_begin_event);
+  if (_rbe_rho_done_event) EVENT_DESTROY(_rbe_rho_done_event);
+  if (_rbe_force_begin_event) EVENT_DESTROY(_rbe_force_begin_event);
+  if (_rbe_force_done_event) EVENT_DESTROY(_rbe_force_done_event);
+  if (_h_rbe_samples) FREE_PINNED_HOST(_h_rbe_samples);
+  if (_h_rbe_rho) FREE_PINNED_HOST(_h_rbe_rho);
+  if (_h_rbe_energy) FREE_PINNED_HOST(_h_rbe_energy);
+
+  _rbe_rho_begin_event = {};
+  _rbe_rho_done_event = {};
+  _rbe_force_begin_event = {};
+  _rbe_force_done_event = {};
+  _h_rbe_samples = nullptr;
+  _h_rbe_rho = nullptr;
+  _h_rbe_energy = nullptr;
+  _rbe_async_resources_ready = false;
+  _rbe_async_phase = RbeAsyncPhase::Idle;
+}
+
 void KSpaceCalculator::ComputeRBE()
 {
-  CHECK_RUNTIME(DEVICESYNC());
+  if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
   const auto start = std::chrono::high_resolution_clock::now();
-  //
-  auto num_atoms = *(_structure_info_data->_num_atoms);
-  const Box force_box = GetPeriodicBoxForKspace(*_box);
-  const rbmd::Real rbe_sum_gauss =
-      ComputeRbeGaussianSum(force_box, _alpha);
-  _rhok_real_redue.resize(_RBE_P);
-  _rhok_image_redue.resize(_RBE_P);
-
-  ComputeChargeStructureFactorRBE_opt(force_box, num_atoms, _kmax_array,
-      _alpha,_RBE_P,_qqr2e,_rhok_real_redue,_rhok_image_redue);
-
-  //RBE Force
-  op::ComputeRBEForceOp<device::DEVICE_GPU>()(
-        force_box,num_atoms, _RBE_P,_alpha,rbe_sum_gauss,_qqr2e,
-        thrust::raw_pointer_cast(_rhok_real_redue.data()),
-        thrust::raw_pointer_cast(_rhok_image_redue.data()),
-        thrust::raw_pointer_cast(_device_data->_d_charge.data()),
-        thrust::raw_pointer_cast(_P_Sample_x.data()),
-        thrust::raw_pointer_cast(_P_Sample_y.data()),
-        thrust::raw_pointer_cast(_P_Sample_z.data()),
-        thrust::raw_pointer_cast(_device_data->_d_px.data()),
-        thrust::raw_pointer_cast(_device_data->_d_py.data()),
-        thrust::raw_pointer_cast(_device_data->_d_pz.data()),
-        thrust::raw_pointer_cast(_device_data->_d_force_kspace_x.data()),
-        thrust::raw_pointer_cast(_device_data->_d_force_kspace_y.data()),
-        thrust::raw_pointer_cast(_device_data->_d_force_kspace_z.data()));
-
-  ComputeRBEVirial(rbe_sum_gauss);
-  CHECK_RUNTIME(DEVICESYNC());
+  BeginRbeForce(nullptr);
+  CHECK_RUNTIME(STREAM_SYNC(nullptr));
+  StartRbeReduction();
+  FinishRbeForce(nullptr);
+  CHECK_RUNTIME(STREAM_SYNC(nullptr));
+  FinalizeRbeForce();
+  if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
   const auto end = std::chrono::high_resolution_clock::now();
   const std::chrono::duration<rbmd::Real> duration = end - start;
   TimingStatistics::Instance().record("Long-Range", duration.count());
@@ -583,8 +697,166 @@ void KSpaceCalculator::ComputeRBE()
   //   }
   //   kspace_file.close();
   // }
+}
 
+void KSpaceCalculator::BeginRbeForce(STREAM_T stream) {
+  if (!SupportsRbeOverlap()) {
+    throw std::runtime_error("BeginRbeForce requires Coulomb type RBE");
+  }
+  if (!_rbe_async_resources_ready ||
+      _rbe_async_phase != RbeAsyncPhase::Idle) {
+    throw std::runtime_error("BeginRbeForce called while RBE buffers are busy");
+  }
+  _rbe_stream = stream;
 
+  const auto num_atoms = *(_structure_info_data->_num_atoms);
+  const Box force_box = GetPeriodicBoxForKspace(*_box);
+  // Sampling, normalization and force evaluation share the full periodic box.
+  PrepareRbeLowModes(force_box);
+  _rbe_sum_gauss = ComputeRbeGaussianSum(force_box, _alpha);
+
+  // Buffers are reused for fixed boxes and resized above if an NPT box change
+  // changes the deterministic mode count.
+  const auto sample_begin = std::chrono::high_resolution_clock::now();
+  RBEInit(force_box, _alpha, _RBE_P);
+  const auto sample_end = std::chrono::high_resolution_clock::now();
+  TimingStatistics::Instance().record(
+      "RBE-SampleHost",
+      std::chrono::duration<rbmd::Real>(sample_end - sample_begin).count());
+
+  rbmd::revision::GpuTimer revision_sample_h2d("RBE-SampleH2D", stream);
+  const std::size_t sample_bytes =
+      static_cast<std::size_t>(_RBE_P) * sizeof(rbmd::Real);
+  CHECK_RUNTIME(MEMCPY_ASYNC(
+      thrust::raw_pointer_cast(_P_Sample_x.data()), _h_rbe_samples,
+      sample_bytes, H2D, stream));
+  CHECK_RUNTIME(MEMCPY_ASYNC(
+      thrust::raw_pointer_cast(_P_Sample_y.data()), _h_rbe_samples + _RBE_P,
+      sample_bytes, H2D, stream));
+  CHECK_RUNTIME(MEMCPY_ASYNC(
+      thrust::raw_pointer_cast(_P_Sample_z.data()), _h_rbe_samples + 2 * _RBE_P,
+      sample_bytes, H2D, stream));
+  if (_rbe_low_modes_enabled) {
+    CHECK_RUNTIME(MEMCPY_ASYNC(thrust::raw_pointer_cast(_rbe_mode_weights.data()),
+        _h_rbe_samples + 3 * _RBE_P, sample_bytes, H2D, stream));
+  }
+  CHECK_RUNTIME(MEMSET_ASYNC(
+      thrust::raw_pointer_cast(_d_rbe_energy.data()), 0,
+      sizeof(rbmd::Real), stream));
+
+  revision_sample_h2d.Stop();
+  CHECK_RUNTIME(EVENT_RECORD(_rbe_rho_begin_event, stream));
+  ComputeChargeStructureFactorRBE_opt(
+      force_box, num_atoms, _kmax_array, _alpha, _RBE_P, _qqr2e,
+      _rhok_real_redue, _rhok_image_redue, stream);
+  CHECK_RUNTIME(EVENT_RECORD(_rbe_rho_done_event, stream));
+  rbmd::revision::GpuTimer revision_rho_d2h("RBE-RhoD2H", stream);
+  const std::size_t rho_half_bytes =
+      static_cast<std::size_t>(_RBE_P) * sizeof(rbmd::Real);
+  CHECK_RUNTIME(MEMCPY_ASYNC(
+      _h_rbe_rho, thrust::raw_pointer_cast(_rhok_real_redue.data()),
+      rho_half_bytes, D2H, stream));
+  CHECK_RUNTIME(MEMCPY_ASYNC(
+      _h_rbe_rho + _RBE_P,
+      thrust::raw_pointer_cast(_rhok_image_redue.data()), rho_half_bytes, D2H,
+      stream));
+  revision_rho_d2h.Stop();
+  _rbe_async_phase = RbeAsyncPhase::RhoQueued;
+}
+
+void KSpaceCalculator::StartRbeReduction() {
+  if (_rbe_async_phase != RbeAsyncPhase::RhoQueued) {
+    throw std::runtime_error(
+        "StartRbeReduction requires completed rho D2H transfers");
+  }
+  RecordRbeEventTiming("RBE-RhoGPU", _rbe_rho_begin_event,
+                       _rbe_rho_done_event);
+#ifdef USE_MPI
+  const auto revision_mpi_start = std::chrono::steady_clock::now();
+  MPI_CHECK(MPI_Iallreduce(MPI_IN_PLACE, _h_rbe_rho, 2 * _RBE_P,
+                           MPI_RBMD_REAL, MPI_SUM, MPI_COMM_WORLD,
+                           &_rbe_reduce_request));
+  TimingStatistics::Instance().record("RBE-MPILaunch", std::chrono::duration<double>(std::chrono::steady_clock::now() - revision_mpi_start).count());
+#endif
+  _rbe_async_phase = RbeAsyncPhase::ReductionInFlight;
+}
+
+void KSpaceCalculator::FinishRbeForce(STREAM_T stream) {
+  if (!SupportsRbeOverlap()) {
+    throw std::runtime_error("FinishRbeForce requires Coulomb type RBE");
+  }
+  if (_rbe_async_phase != RbeAsyncPhase::ReductionInFlight) {
+    throw std::runtime_error(
+        "FinishRbeForce requires an active RBE reduction");
+  }
+
+#ifdef USE_MPI
+  const auto mpi_wait_begin = std::chrono::steady_clock::now();
+  MPI_CHECK(MPI_Wait(&_rbe_reduce_request, MPI_STATUS_IGNORE));
+  const auto mpi_wait_end = std::chrono::steady_clock::now();
+  TimingStatistics::Instance().record(
+      "RBE-MPIWait",
+      std::chrono::duration<double>(mpi_wait_end - mpi_wait_begin).count());
+#endif
+
+  _rbe_stream = stream;
+  rbmd::revision::GpuTimer revision_rho_h2d("RBE-RhoH2D", stream);
+  const std::size_t rho_half_bytes =
+      static_cast<std::size_t>(_RBE_P) * sizeof(rbmd::Real);
+  CHECK_RUNTIME(MEMCPY_ASYNC(
+      thrust::raw_pointer_cast(_rhok_real_redue.data()), _h_rbe_rho,
+      rho_half_bytes, H2D, stream));
+  CHECK_RUNTIME(MEMCPY_ASYNC(
+      thrust::raw_pointer_cast(_rhok_image_redue.data()),
+      _h_rbe_rho + _RBE_P, rho_half_bytes, H2D, stream));
+
+  const auto num_atoms = *(_structure_info_data->_num_atoms);
+  const Box force_box = GetPeriodicBoxForKspace(*_box);
+  revision_rho_h2d.Stop();
+  CHECK_RUNTIME(EVENT_RECORD(_rbe_force_begin_event, stream));
+  op::ComputeRBEForceOp<device::DEVICE_GPU>()(
+      force_box, num_atoms, _RBE_P, _alpha, _rbe_sum_gauss, _qqr2e,
+      thrust::raw_pointer_cast(_rhok_real_redue.data()),
+      thrust::raw_pointer_cast(_rhok_image_redue.data()),
+      thrust::raw_pointer_cast(_device_data->_d_charge.data()),
+      thrust::raw_pointer_cast(_P_Sample_x.data()),
+      thrust::raw_pointer_cast(_P_Sample_y.data()),
+      thrust::raw_pointer_cast(_P_Sample_z.data()),
+      thrust::raw_pointer_cast(_device_data->_d_px.data()),
+      thrust::raw_pointer_cast(_device_data->_d_py.data()),
+      thrust::raw_pointer_cast(_device_data->_d_pz.data()),
+      thrust::raw_pointer_cast(_device_data->_d_force_kspace_x.data()),
+      thrust::raw_pointer_cast(_device_data->_d_force_kspace_y.data()),
+      thrust::raw_pointer_cast(_device_data->_d_force_kspace_z.data()),
+      stream, _rbe_low_modes_enabled ? thrust::raw_pointer_cast(_rbe_mode_weights.data()) : nullptr);
+  CHECK_RUNTIME(EVENT_RECORD(_rbe_force_done_event, stream));
+  rbmd::revision::GpuTimer revision_virial("RBE-VirialEnergyGPU", stream);
+  ComputeRBEVirial(_rbe_sum_gauss, stream);
+  revision_virial.Stop();
+  rbmd::revision::GpuTimer revision_energy_d2h("RBE-EnergyD2H", stream);
+  CHECK_RUNTIME(MEMCPY_ASYNC(
+      _h_rbe_energy, thrust::raw_pointer_cast(_d_rbe_energy.data()),
+      sizeof(rbmd::Real), D2H, stream));
+  revision_energy_d2h.Stop();
+  _rbe_async_phase = RbeAsyncPhase::ForceQueued;
+}
+
+void KSpaceCalculator::FinalizeRbeForce() {
+  if (_rbe_async_phase != RbeAsyncPhase::ForceQueued) {
+    throw std::runtime_error(
+        "FinalizeRbeForce requires completed RBE force work");
+  }
+  RecordRbeEventTiming("RBE-ForceGPU", _rbe_force_begin_event,
+                       _rbe_force_done_event);
+  if (rbmd::revision::GetOptions().isolated_timing) {
+    float rho_ms = 0, force_ms = 0;
+    rbmd::revision::RequireGpu(EVENT_ELAPSED_TIME(&rho_ms, _rbe_rho_begin_event, _rbe_rho_done_event));
+    rbmd::revision::RequireGpu(EVENT_ELAPSED_TIME(&force_ms, _rbe_force_begin_event, _rbe_force_done_event));
+    // Add locally before rank aggregation; max(rho)+max(force) is not max(rho+force).
+    TimingStatistics::Instance().record("Long-ComputeGPU", (double(rho_ms) + force_ms) * 1.e-3);
+  }
+  _e_kspace = _h_rbe_energy[0];
+  _rbe_async_phase = RbeAsyncPhase::Idle;
 }
 
 void KSpaceCalculator::ComputeChargeStructureFactorRBE_opt(
@@ -595,11 +867,12 @@ void KSpaceCalculator::ComputeChargeStructureFactorRBE_opt(
    rbmd::Id RBE_P,
    rbmd::Real qqr2e,
    thrust::device_vector<rbmd::Real>& rhok_real_redue,
-   thrust::device_vector<rbmd::Real>& rhok_image_redue)
+   thrust::device_vector<rbmd::Real>& rhok_image_redue,
+   STREAM_T stream)
 {
-  auto start = std::chrono::high_resolution_clock::now();
-  //get P_Sample at each step
-  RBEInit(box, alpha, RBE_P);
+  (void)kmax_array;
+  (void)alpha;
+  (void)qqr2e;
   auto p_number= RBE_P;
 
   //Charge Structure Factor for RBE
@@ -613,43 +886,12 @@ void KSpaceCalculator::ComputeChargeStructureFactorRBE_opt(
       thrust::raw_pointer_cast(_device_data->_d_py.data()),
       thrust::raw_pointer_cast(_device_data->_d_pz.data()),
       thrust::raw_pointer_cast(rhok_real_redue.data()),
-      thrust::raw_pointer_cast(rhok_image_redue.data()));
-
-  CHECK_RUNTIME(DEVICESYNC());
-  AllReduceRealBufferInPlace(
-      thrust::raw_pointer_cast(rhok_real_redue.data()), rhok_real_redue.size());
-  AllReduceRealBufferInPlace(
-      thrust::raw_pointer_cast(rhok_image_redue.data()), rhok_image_redue.size());
-
-  // auto end = std::chrono::high_resolution_clock::now();
-  // std::chrono::duration<rbmd::Real> duration = end - start;
-  // std::cout <<  "优化结构因子耗时："<< duration.count() << std::endl;
-
-
-  //energy
-  if (ThermoStats::Instance().ShouldOutput() && "yes" == _energy_rbe_flag)
-  {
-    //charge self energy//
-    ComputeSelfEnergy(alpha,qqr2e,_e_self_energy);
-
-    if (kEnableBatchedExactKspaceEnergyPath) {
-      ComputeKspaceEnergy(box, num_atoms, kmax_array,
-           alpha, qqr2e ,_e_kspace);
-      _e_kspace = _e_kspace +_e_self_energy;
-    } else if (kEnableLegacyExactKspaceEnergyPath) {
-      // TODO(gyf): Delete this fallback once the batched path is validated.
-      ComputeKspaceEnergyLegacy(box, num_atoms, kmax_array,
-           alpha, qqr2e ,_e_kspace);
-      _e_kspace = _e_kspace +_e_self_energy;
-    }
-  }
+      thrust::raw_pointer_cast(rhok_image_redue.data()), stream);
 }
 
-void KSpaceCalculator::ComputeRBEVirial(rbmd::Real rbe_sum_gauss)
+void KSpaceCalculator::ComputeRBEVirial(rbmd::Real rbe_sum_gauss,
+                                        STREAM_T stream)
 {
-  //
-  rbmd::Real h_energy;
-  thrust::device_vector<rbmd::Real> d_energy(1);
   const Box force_box = GetPeriodicBoxForKspace(*_box);
 
   //
@@ -661,57 +903,68 @@ void KSpaceCalculator::ComputeRBEVirial(rbmd::Real rbe_sum_gauss)
         thrust::raw_pointer_cast(_P_Sample_y.data()),
         thrust::raw_pointer_cast(_P_Sample_z.data()),
         thrust::raw_pointer_cast(_device_data->_d_virial_kspace.data()),
-        thrust::raw_pointer_cast( d_energy.data()));
-
-  // D2H
-  thrust::copy(d_energy.begin(), d_energy.end(), &h_energy);
-  _e_kspace = h_energy;
+        thrust::raw_pointer_cast(_d_rbe_energy.data()), stream,
+        _rbe_low_modes_enabled ? thrust::raw_pointer_cast(_rbe_mode_weights.data()) : nullptr);
 }
 
 void KSpaceCalculator::RBEInit(Box box,rbmd::Real alpha,rbmd::Id RBE_P,
                                bool use_random)
 {
+  if (_rbe_low_modes_enabled) {
+    int rank = 0;
 #ifdef USE_MPI
-  std::vector<rbmd::Real> h_P_Sample_x;
-  std::vector<rbmd::Real> h_P_Sample_y;
-  std::vector<rbmd::Real> h_P_Sample_z;
+    MPI_CHECK(MPI_Comm_rank(MPI_COMM_WORLD, &rank));
+#endif
+    if (rank == 0) {
+      rbmd::Id index = 0;
+      auto append = [&](const rbmd::RbeLowModes::Mode& mode) {
+        _h_rbe_samples[index] = mode.x;
+        _h_rbe_samples[RBE_P + index] = mode.y;
+        _h_rbe_samples[2 * RBE_P + index] = mode.z;
+        _h_rbe_samples[3 * RBE_P + index] = mode.weight;
+        ++index;
+      };
+      for (const auto& mode : _rbe_low_modes.Low()) append(mode);
+      for (rbmd::Id i = 0; i < _rbe_tail_samples; ++i)
+        append(_rbe_low_modes.DrawTail(_rbe_low_generator, _rbe_tail_samples));
+    }
+#ifdef USE_MPI
+    MPI_CHECK(MPI_Bcast(_h_rbe_samples, 4 * RBE_P, MPI_RBMD_REAL, 0, MPI_COMM_WORLD));
+#endif
+    return;
+  }
+#ifdef USE_MPI
   GET_RBMD_PARALLEL->GetRbeRadomM(alpha, use_random, box,
-                                  h_P_Sample_x,
-                                  h_P_Sample_y, h_P_Sample_z);
+                                  _h_rbe_sample_x,
+                                  _h_rbe_sample_y, _h_rbe_sample_z);
   const auto expected_size = static_cast<std::size_t>(RBE_P);
-  if (h_P_Sample_x.size() != expected_size ||
-      h_P_Sample_y.size() != expected_size ||
-      h_P_Sample_z.size() != expected_size) {
+  if (_h_rbe_sample_x.size() != expected_size ||
+      _h_rbe_sample_y.size() != expected_size ||
+      _h_rbe_sample_z.size() != expected_size) {
     throw std::runtime_error(
         "KSpaceCalculator::RBEInit MPI sample size mismatch: expected " +
         std::to_string(expected_size) + ", got x=" +
-        std::to_string(h_P_Sample_x.size()) + ", y=" +
-        std::to_string(h_P_Sample_y.size()) + ", z=" +
-        std::to_string(h_P_Sample_z.size()));
+        std::to_string(_h_rbe_sample_x.size()) + ", y=" +
+        std::to_string(_h_rbe_sample_y.size()) + ", z=" +
+        std::to_string(_h_rbe_sample_z.size()));
   }
-
-  _P_Sample_x.assign(h_P_Sample_x.begin(), h_P_Sample_x.end());
-  _P_Sample_y.assign(h_P_Sample_y.begin(), h_P_Sample_y.end());
-  _P_Sample_z.assign(h_P_Sample_z.begin(), h_P_Sample_z.end());
 #else
   Real3 sigma = {
       rbmd::Real((SQRT(alpha / 2.0) * box._length[0] / M_PI)),
       rbmd::Real((SQRT(alpha / 2.0) * box._length[1] / M_PI)),
       rbmd::Real((SQRT(alpha / 2.0) * box._length[2] / M_PI))};
   RBEPSAMPLE rbe_presolve_psample = { alpha, box, RBE_P, use_random};
-  thrust::host_vector<rbmd::Real> h_P_Sample_x(RBE_P);
-  thrust::host_vector<rbmd::Real> h_P_Sample_y(RBE_P);
-  thrust::host_vector<rbmd::Real> h_P_Sample_z(RBE_P);
-
   // TODO Reconstruct using random number generator!
   rbe_presolve_psample.Fetch_P_Sample(0.0, sigma,
-    thrust::raw_pointer_cast(h_P_Sample_x.data()),
-    thrust::raw_pointer_cast(h_P_Sample_y.data()),
-    thrust::raw_pointer_cast(h_P_Sample_z.data()));
-  _P_Sample_x = h_P_Sample_x;
-  _P_Sample_y = h_P_Sample_y;
-  _P_Sample_z = h_P_Sample_z;
+    _h_rbe_sample_x.data(), _h_rbe_sample_y.data(),
+    _h_rbe_sample_z.data());
 #endif
+
+  std::copy(_h_rbe_sample_x.begin(), _h_rbe_sample_x.end(), _h_rbe_samples);
+  std::copy(_h_rbe_sample_y.begin(), _h_rbe_sample_y.end(),
+            _h_rbe_samples + RBE_P);
+  std::copy(_h_rbe_sample_z.begin(), _h_rbe_sample_z.end(),
+            _h_rbe_samples + 2 * RBE_P);
 }
 
 void KSpaceCalculator::ComputeQsqSum()
@@ -1329,6 +1582,7 @@ void KSpaceCalculator::RBSOGSampleKSpace(Box box)
 }
 
 void KSpaceCalculator::ComputeRBSOG() {
+  if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
   auto start = std::chrono::high_resolution_clock::now();
   auto num_atoms = *(_structure_info_data->_num_atoms);
   const Box force_box = GetPeriodicBoxForKspace(*_box);
@@ -1536,6 +1790,7 @@ void KSpaceCalculator::ComputeRBSOG() {
 
 
   // 10. Timing and Virial Reduction
+  if (rbmd::revision::GetOptions().isolated_timing) rbmd::revision::DeviceSynchronize();
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<rbmd::Real> duration = end - start;
   TimingStatistics::Instance().record("Long-Range", duration.count());

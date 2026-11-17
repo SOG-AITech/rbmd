@@ -11,36 +11,11 @@ __global__ void FixRBLForce(const rbmd::Id num_atoms,
                             const rbmd::Real corr_value_y,
                             const rbmd::Real corr_value_z, rbmd::Real* __restrict__ fx,
                             rbmd::Real* __restrict__ fy, rbmd::Real* __restrict__ fz) {
-  __shared__ rbmd::Real s_fx[BLOCK_SIZE];
-  __shared__ rbmd::Real s_fy[BLOCK_SIZE];
-  __shared__ rbmd::Real s_fz[BLOCK_SIZE];
-
-  unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  unsigned int local_tid = threadIdx.x;
-
-  //
+  const unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid < num_atoms) {
-    s_fx[local_tid] = fx[tid];
-    s_fy[local_tid] = fy[tid];
-    s_fz[local_tid] = fz[tid];
-  }
-
-  __syncthreads();
-
-  //
-  if (tid < num_atoms) {
-    s_fx[local_tid] -= corr_value_x;
-    s_fy[local_tid] -= corr_value_y;
-    s_fz[local_tid] -= corr_value_z;
-  }
-
-  __syncthreads();
-
-  //
-  if (tid < num_atoms) {
-    fx[tid] = s_fx[local_tid];
-    fy[tid] = s_fy[local_tid];
-    fz[tid] = s_fz[local_tid];
+    fx[tid] -= corr_value_x;
+    fy[tid] -= corr_value_y;
+    fz[tid] -= corr_value_z;
   }
 }
 

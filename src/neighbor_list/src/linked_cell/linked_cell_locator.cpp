@@ -1,5 +1,8 @@
 #include "linked_cell/linked_cell_locator.h"
 
+#include <algorithm>
+#include <cstdlib>
+
 #include "data_manager.h"
 #include "model/md_data.h"
 #include "output/include/Logger.hpp"
@@ -34,9 +37,23 @@ std::shared_ptr<LinkedCell> LinkedCellLocator::GetLinkedCell() {
                      "cutoff.\033[0m");
         exit(0);
       }
-      _linked_cell->_cell_count_within_cutoff = static_cast<rbmd::Id>(
+      const rbmd::Id natural_cell_radius = static_cast<rbmd::Id>(
           std::ceil(
               static_cast<double>(_linked_cell->_neighbor_cutoff / _r_core)));
+      rbmd::Id cell_radius = natural_cell_radius;
+      if (const char* value = std::getenv("RBMD_RBL_CELL_RADIUS")) {
+        const int requested = std::atoi(value);
+        if (requested > 0 && requested <= natural_cell_radius) {
+          cell_radius = static_cast<rbmd::Id>(requested);
+        }
+      }
+      _linked_cell->_cell_count_within_cutoff = cell_radius;
+      Logger::Instance().info(
+          "RBL linked-cell stencil radius: {} (natural {}), cells per "
+          "stencil: {}",
+          cell_radius, natural_cell_radius,
+          (2 * cell_radius + 1) * (2 * cell_radius + 1) *
+              (2 * cell_radius + 1));
     }
     _linked_cell->Build();
     _linked_cell->InitializeCells();

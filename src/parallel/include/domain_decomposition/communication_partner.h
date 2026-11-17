@@ -71,12 +71,26 @@ class CommunicationPartner {
   int GetSendCount(MessageType msgType) const;
 
   size_t GetSendBytes(MessageType msgType) const;
+  size_t GetAtomByteSize(MessageType msgType) const;
 
   char* GetSendBufferPtr(MessageType msgType);
 
   void EnsureRecvBuffer(MessageType msgType, size_t recvBytes);
 
   char* GetRecvBufferPtr(MessageType msgType);
+
+  const thrust::device_vector<rbmd::Id>& GetHaloSendIndices() const {
+    return _halo_send_indices;
+  }
+  const thrust::device_vector<rbmd::Real>& GetHaloShiftX() const {
+    return _halo_shift_x;
+  }
+  const thrust::device_vector<rbmd::Real>& GetHaloShiftY() const {
+    return _halo_shift_y;
+  }
+  const thrust::device_vector<rbmd::Real>& GetHaloShiftZ() const {
+    return _halo_shift_z;
+  }
 
   void ClearSendBuffer();
 
@@ -259,6 +273,17 @@ class CommunicationPartner {
   bool _isHaloRecvPosted;         // 是否已为Halo发出Irecv
   bool _isHaloRecvFinalized;      // 是否已完成Halo接收并解包
   CommunicationBuffer _send_buf{}, _recv_buf{};
+  // Leaving pack 在 exchangePhaseP2P 的 event 同步前仍会异步读取这些计划。
+  thrust::device_vector<int> _leaving_send_indices{};
+  thrust::device_vector<int> _leaving_owner{};
+  thrust::device_vector<rbmd::Real> _leaving_shift_x{};
+  thrust::device_vector<rbmd::Real> _leaving_shift_y{};
+  thrust::device_vector<rbmd::Real> _leaving_shift_z{};
+  // Halo rebuild 时直接在 GPU 上生成，并作为后续 forward exchange 的计划复用。
+  thrust::device_vector<rbmd::Id> _halo_send_indices{};
+  thrust::device_vector<rbmd::Real> _halo_shift_x{};
+  thrust::device_vector<rbmd::Real> _halo_shift_y{};
+  thrust::device_vector<rbmd::Real> _halo_shift_z{};
   // CommunicationBuffer _sendBuf, _recvBuf; // used to be ParticleData and TODO
   // force
 
