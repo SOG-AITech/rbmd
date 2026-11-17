@@ -5,7 +5,7 @@
 | 配置 | 数据 | 原子数 | 设置 |
 |---|---|---|---|
 | lj.json | lj_salt.data | 200000 | LJ单位，q=±1，T*=1，dielectric=1，因此单位电荷Bjerrum长度lB/σ=1 |
-| water.json / water.rdf.json | h2o.data | 72981 | SPC/E，298 K，SHAKE；普通阻尼100 fs，RDF阻尼5 fs |
+| water.json | water-72981.data | 72981 | SPC/E，298 K，SHAKE；RDF 与计时均用 10 fs 阻尼 |
 | water.base.json | NewBenchmark/inputs/water-base/water2703.data | 2703 | 用08脚本给h2o_rdf.data补归档系数；不改变坐标，3×3×3后为72981 |
 
 

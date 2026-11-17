@@ -107,8 +107,8 @@ def prepare(a):
         raise ValueError('This package supports RDF trajectories only')
     if a.experiment == 'dynamics' and a.purpose=='rdf' and s['name']=='water':
         if (base['init_configuration']['read_data']['unit'].upper() != 'REAL' or
-                base['execution']['temperature'][2] != 5):
-            raise ValueError('Water accuracy trajectories retain 5 fs damping; use systems/*.rdf.json')
+                base['execution']['temperature'][2] != 10):
+            raise ValueError('Water accuracy trajectories require 10 fs damping; use systems/water.json')
     if a.data:
         base['init_configuration']['read_data']['file'] = str(a.data.resolve())
     data = Path(base['init_configuration']['read_data']['file'])
@@ -218,12 +218,12 @@ def main():
     p.add_argument('--allow-missing-data',action='store_true',help='Offline generation only; execution still checks data')
     p.add_argument('--P',type=int,nargs='+',default=[100,200,400,800])
     p.add_argument('--p',type=int,nargs='+',default=[30,60,120])
-    p.add_argument('--cutoffs',type=float,nargs='+',help='Default: water 9; LJ 8 12 16. Tuning scans only the PPPM Coulomb cutoff.')
+    p.add_argument('--cutoffs',type=float,nargs='+',help='Default: configured water cutoff; LJ 8 12 16. Tuning scans only the PPPM Coulomb cutoff.')
     p.add_argument('--kmax',type=int,nargs=3)
     p.add_argument('--samples',type=int,default=1000)
     p.add_argument('--steps',type=int,help='Measured steps, excluding warmup: default 1000')
     p.add_argument('--warmup',type=int,default=100)
-    p.add_argument('--repeats',type=int,help='Default: 5 for dynamics, 1 for performance experiments')
+    p.add_argument('--repeats',type=int,help='Default: 3 for dynamics, 1 for performance experiments')
     p.add_argument('--stride',type=int,default=100)
     p.add_argument('--seed',type=int,default=20261016)
     p.add_argument('--isolated',action='store_true')

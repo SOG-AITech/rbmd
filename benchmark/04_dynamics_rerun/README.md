@@ -12,20 +12,20 @@ LAMMPS 回放负责总偶极矩、各 k 的电荷傅里叶分量；Python 计算
 
 ## 轨迹与统一约定
 
-普通 RDF 轨迹都由 RBMD 自动选 α。水 RDF 保留5 fs阻尼、0.5 fs时间步、链长3、子循环1；同一对照的两个引擎使用相同 data、模型、约束和温控参数。轨迹运行不参与扩展性计时。
+普通 RDF 轨迹都由 RBMD 自动选 α。三轮水 RDF 使用 10 fs 阻尼、0.5 fs时间步、链长3、子循环1；同一对照的两个引擎使用相同 data、模型、约束和温控参数。轨迹运行不参与扩展性计时。
 
-生成器会拒绝 NVE 输入，以及水 非5 fs阻尼的RDF输入；请使用 `*.rdf.json`，不要把100 fs阻尼的计时模板传入本节。`--steps` 只指定一次生产长度，不自动生成5 ns/50 ns对照。
+水 RDF 与当前计时共用 `systems/water.json`：截断 10 Å、核心 6.5 Å、RBL p=100、RBE P=300、skin 2 Å。`--steps` 只指定一次生产长度，不自动生成5 ns/50 ns对照。
 
 ```bash
 # RDF 轨迹示例；LJ 换成对应 system JSON。
-bash 04_dynamics_rerun/prepare.sh --system systems/water.rdf.json --output runs/water-rdf-v2 \
-  --steps 100000 --stride 100 --repeats 5 \
-  --states /data/s1.data /data/s2.data /data/s3.data /data/s4.data /data/s5.data
+bash 04_dynamics_rerun/prepare.sh --system systems/water.json --output runs/water-rdf-v2 \
+  --steps 100000 --stride 100 --seed 2026102301 --repeats 3 \
+  --data /data/s1.data --states /data/s1.data /data/s2.data /data/s3.data
 # 将同一次 RBMD 运行的所有 rank 分片合并。
 python3 common/merge_trajectory_shards.py -o /work/merged.dump /work/run/rbmd.rank*.trj
 ```
 
-单次RDF用一个弛豫构型作为起点就可以；五份独立平衡起点用于这里的跨轨迹统计误差条，不是运行一次RDF的前提，也不是03 MJ2(a)的要求。做五次统计时，两引擎逐次配对使用相同起点。未给 `--states` 时只是同一起点重复，不能当独立平衡态误差条。帧之间相关，不能把每帧当独立样本。
+单次RDF用一个弛豫构型作为起点就可以；本次水 RDF 使用三轮配对起点，不是运行一次RDF的前提，也不是03 MJ2(a)的要求。逐轮统计时，两引擎逐次配对使用相同起点。未给 `--states` 时只是同一起点重复，不能当独立平衡态误差条。帧之间相关，不能把每帧当独立样本。
 
 回放输入须含 id/type/q、x/y/z、xu/yu/zu、vx/vy/vz。转换器检查原 data 的原子 ID、类型、电荷，以及轨迹各帧完整性；从显式展开坐标恢复映像，不从相邻帧最小位移猜跨界。限定固定正交盒；缺帧、变盒或 triclinic 会拒绝。水介电回放额外检查每个三点中性水分子的展开坐标一致性，避免跨界造成伪偶极涨落。
 
@@ -34,9 +34,9 @@ python3 common/merge_trajectory_shards.py -o /work/merged.dump /work/run/rbmd.ra
 ## RDF 回放
 
 ```bash
-python3 04_dynamics_rerun/prepare_rerun.py --observable rdf --system systems/water.rdf.json \
+python3 04_dynamics_rerun/prepare_rerun.py --observable rdf --system systems/water.json \
   --case /work/run --trajectory /work/merged.dump --output /work/rdf-rerun \
-  --first 1000 --stride 100 --radius 8 --dr 0.1
+  --first 20000 --stride 100 --radius 9 --dr 0.05
 sbatch common/job.slurm /work/rdf-rerun/lammps
 python3 04_dynamics_rerun/compare_rdf.py rbmd-rdf.dat pppm-rdf.dat \
   --peak-min 2 --peak-max 4 --output rdf-comparison.json
