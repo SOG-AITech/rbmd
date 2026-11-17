@@ -1,0 +1,1358 @@
+{
+  "schema": "PAIR_OPT_VERIFIED_RESULTS_V1",
+  "binary_sha256": "fd02e2e589e29e75bc1235028bc56b27813a49addecf77c7acdd4d59225b8c8c",
+  "groups": [
+    {
+      "id": "h2o-linear-N583848-G4",
+      "system": "h2o",
+      "atoms": 583848,
+      "ranks": 4,
+      "grid": [
+        2,
+        2,
+        1
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.0003105,
+        "Bond": 0.00033,
+        "Long-Range": 0.003804,
+        "Neighbor-List": 0.0247435,
+        "RBL-CacheCheck": 0.00031499999999999996,
+        "RBL-CandidateRebuild": 0.358727,
+        "RBL-CoordinateExchange": 0.0003455,
+        "RBL-CorrectionApply": 4.1e-05,
+        "RBL-FilterSample": 0.014544999999999999,
+        "RBL-LocalReduction": 9.1e-05,
+        "RBL-MPIAllreduce": 6.6e-05,
+        "RBL-PairKernel": 0.0022145000000000003,
+        "Short-Range": 0.0024215
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.024458,
+            "RBL-CacheCheck": 0.000307,
+            "RBL-CoordinateExchange": 0.00034,
+            "RBL-CandidateRebuild": 0.349022,
+            "RBL-FilterSample": 0.014547,
+            "Short-Range": 0.002427,
+            "RBL-PairKernel": 0.002219,
+            "RBL-LocalReduction": 9.1e-05,
+            "RBL-MPIAllreduce": 7.1e-05,
+            "RBL-CorrectionApply": 4.1e-05,
+            "Long-Range": 0.003785,
+            "Bond": 0.000331,
+            "Angle": 0.00031
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 12.757306793006137,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 300.38
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.025029,
+            "RBL-CacheCheck": 0.000323,
+            "RBL-CoordinateExchange": 0.000351,
+            "RBL-CandidateRebuild": 0.368432,
+            "RBL-FilterSample": 0.014543,
+            "Short-Range": 0.002416,
+            "RBL-PairKernel": 0.00221,
+            "RBL-LocalReduction": 9.1e-05,
+            "RBL-MPIAllreduce": 6.1e-05,
+            "RBL-CorrectionApply": 4.1e-05,
+            "Long-Range": 0.003823,
+            "Bond": 0.000329,
+            "Angle": 0.000311
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 12.852379251038656,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 300.37
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.004346426271732,
+      "errors": [],
+      "job_ids": [
+        "985960"
+      ]
+    },
+    {
+      "id": "h2o-linear-N1313658-G4",
+      "system": "h2o",
+      "atoms": 1313658,
+      "ranks": 4,
+      "grid": [
+        2,
+        2,
+        1
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.0003595,
+        "Bond": 0.0003815,
+        "Long-Range": 0.005334,
+        "Neighbor-List": 0.057467000000000004,
+        "RBL-CacheCheck": 0.0003795,
+        "RBL-CandidateRebuild": 0.8874774999999999,
+        "RBL-CoordinateExchange": 0.0004215,
+        "RBL-CorrectionApply": 4.7000000000000004e-05,
+        "RBL-FilterSample": 0.029393500000000003,
+        "RBL-LocalReduction": 9.55e-05,
+        "RBL-MPIAllreduce": 4.6500000000000005e-05,
+        "RBL-PairKernel": 0.0043645,
+        "Short-Range": 0.004565
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.061021,
+            "RBL-CacheCheck": 0.000431,
+            "RBL-CoordinateExchange": 0.000474,
+            "RBL-CandidateRebuild": 0.996722,
+            "RBL-FilterSample": 0.029399,
+            "Short-Range": 0.004567,
+            "RBL-PairKernel": 0.004366,
+            "RBL-LocalReduction": 9.5e-05,
+            "RBL-MPIAllreduce": 4.8e-05,
+            "RBL-CorrectionApply": 4.6e-05,
+            "Long-Range": 0.005302,
+            "Bond": 0.000379,
+            "Angle": 0.000356
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 25.74672943796031,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 300.71
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.053913,
+            "RBL-CacheCheck": 0.000328,
+            "RBL-CoordinateExchange": 0.000369,
+            "RBL-CandidateRebuild": 0.778233,
+            "RBL-FilterSample": 0.029388,
+            "Short-Range": 0.004563,
+            "RBL-PairKernel": 0.004363,
+            "RBL-LocalReduction": 9.6e-05,
+            "RBL-MPIAllreduce": 4.5e-05,
+            "RBL-CorrectionApply": 4.8e-05,
+            "Long-Range": 0.005366,
+            "Bond": 0.000384,
+            "Angle": 0.000363
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 23.750581407919526,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 300.71
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.0060796433275916,
+      "errors": [],
+      "job_ids": [
+        "985961"
+      ]
+    },
+    {
+      "id": "h2o-linear-N1970487-G4",
+      "system": "h2o",
+      "atoms": 1970487,
+      "ranks": 4,
+      "grid": [
+        2,
+        2,
+        1
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.00041850000000000004,
+        "Bond": 0.0004475,
+        "Long-Range": 0.006677000000000001,
+        "Neighbor-List": 0.0975365,
+        "RBL-CacheCheck": 0.000364,
+        "RBL-CandidateRebuild": 1.7195165000000001,
+        "RBL-CoordinateExchange": 0.000514,
+        "RBL-CorrectionApply": 4.95e-05,
+        "RBL-FilterSample": 0.0433055,
+        "RBL-LocalReduction": 0.0001,
+        "RBL-MPIAllreduce": 5.9e-05,
+        "RBL-PairKernel": 0.0063025,
+        "Short-Range": 0.0065179999999999995
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.101018,
+            "RBL-CacheCheck": 0.000422,
+            "RBL-CoordinateExchange": 0.000514,
+            "RBL-CandidateRebuild": 1.828429,
+            "RBL-FilterSample": 0.043298,
+            "Short-Range": 0.006521,
+            "RBL-PairKernel": 0.006301,
+            "RBL-LocalReduction": 0.0001,
+            "RBL-MPIAllreduce": 5.8e-05,
+            "RBL-CorrectionApply": 5.1e-05,
+            "Long-Range": 0.0067,
+            "Bond": 0.00045,
+            "Angle": 0.000422
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 40.22212749486789,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 300.94
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.094055,
+            "RBL-CacheCheck": 0.000306,
+            "RBL-CoordinateExchange": 0.000514,
+            "RBL-CandidateRebuild": 1.610604,
+            "RBL-FilterSample": 0.043313,
+            "Short-Range": 0.006515,
+            "RBL-PairKernel": 0.006304,
+            "RBL-LocalReduction": 0.0001,
+            "RBL-MPIAllreduce": 6e-05,
+            "RBL-CorrectionApply": 4.8e-05,
+            "Long-Range": 0.006654,
+            "Bond": 0.000445,
+            "Angle": 0.000415
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 37.64254065300338,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 300.94
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.003948667324778,
+      "errors": [],
+      "job_ids": [
+        "985962"
+      ]
+    },
+    {
+      "id": "h2o-linear-N3940974-G4",
+      "system": "h2o",
+      "atoms": 3940974,
+      "ranks": 4,
+      "grid": [
+        2,
+        2,
+        1
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.0005614999999999999,
+        "Bond": 0.00059,
+        "Long-Range": 0.010814500000000001,
+        "Neighbor-List": 0.2294805,
+        "RBL-CacheCheck": 0.000479,
+        "RBL-CandidateRebuild": 4.650556,
+        "RBL-CoordinateExchange": 0.0006275,
+        "RBL-CorrectionApply": 5.75e-05,
+        "RBL-FilterSample": 0.0828625,
+        "RBL-LocalReduction": 0.0001195,
+        "RBL-MPIAllreduce": 7.6e-05,
+        "RBL-PairKernel": 0.0124145,
+        "Short-Range": 0.012663
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.226047,
+            "RBL-CacheCheck": 0.000486,
+            "RBL-CoordinateExchange": 0.000629,
+            "RBL-CandidateRebuild": 4.541187,
+            "RBL-FilterSample": 0.082939,
+            "Short-Range": 0.012667,
+            "RBL-PairKernel": 0.012416,
+            "RBL-LocalReduction": 0.000121,
+            "RBL-MPIAllreduce": 8.1e-05,
+            "RBL-CorrectionApply": 5.7e-05,
+            "Long-Range": 0.010833,
+            "Bond": 0.000591,
+            "Angle": 0.000561
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 81.35753301694058,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.26
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.232914,
+            "RBL-CacheCheck": 0.000472,
+            "RBL-CoordinateExchange": 0.000626,
+            "RBL-CandidateRebuild": 4.759925,
+            "RBL-FilterSample": 0.082786,
+            "Short-Range": 0.012659,
+            "RBL-PairKernel": 0.012413,
+            "RBL-LocalReduction": 0.000118,
+            "RBL-MPIAllreduce": 7.1e-05,
+            "RBL-CorrectionApply": 5.8e-05,
+            "Long-Range": 0.010796,
+            "Bond": 0.000589,
+            "Angle": 0.000562
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 82.98158917203546,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.26
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.0019185674696227,
+      "errors": [],
+      "job_ids": [
+        "985963"
+      ]
+    },
+    {
+      "id": "h2o-linear-N7881948-G4",
+      "system": "h2o",
+      "atoms": 7881948,
+      "ranks": 4,
+      "grid": [
+        2,
+        2,
+        1
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.000873,
+        "Bond": 0.0009480000000000001,
+        "Long-Range": 0.0191,
+        "Neighbor-List": 0.415381,
+        "RBL-CacheCheck": 0.0007390000000000001,
+        "RBL-CandidateRebuild": 7.399884,
+        "RBL-CoordinateExchange": 0.000809,
+        "RBL-CorrectionApply": 7.850000000000001e-05,
+        "RBL-FilterSample": 0.1839335,
+        "RBL-LocalReduction": 0.000147,
+        "RBL-MPIAllreduce": 0.000101,
+        "RBL-PairKernel": 0.024516000000000003,
+        "Short-Range": 0.0248295
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.398251,
+            "RBL-CacheCheck": 0.000776,
+            "RBL-CoordinateExchange": 0.000782,
+            "RBL-CandidateRebuild": 6.871197,
+            "RBL-FilterSample": 0.18369,
+            "Short-Range": 0.024816,
+            "RBL-PairKernel": 0.024507,
+            "RBL-LocalReduction": 0.000149,
+            "RBL-MPIAllreduce": 8.7e-05,
+            "RBL-CorrectionApply": 8e-05,
+            "Long-Range": 0.019124,
+            "Bond": 0.000937,
+            "Angle": 0.000873
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 142.67403986793943,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.432511,
+            "RBL-CacheCheck": 0.000702,
+            "RBL-CoordinateExchange": 0.000836,
+            "RBL-CandidateRebuild": 7.928571,
+            "RBL-FilterSample": 0.184177,
+            "Short-Range": 0.024843,
+            "RBL-PairKernel": 0.024525,
+            "RBL-LocalReduction": 0.000145,
+            "RBL-MPIAllreduce": 0.000115,
+            "RBL-CorrectionApply": 7.7e-05,
+            "Long-Range": 0.019076,
+            "Bond": 0.000959,
+            "Angle": 0.000873
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 151.06075058784336,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.00047815296341,
+      "errors": [],
+      "job_ids": [
+        "985964"
+      ]
+    },
+    {
+      "id": "h2o-strong-N7881948-G4",
+      "system": "h2o",
+      "atoms": 7881948,
+      "ranks": 4,
+      "grid": [
+        1,
+        2,
+        2
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.0009625,
+        "Bond": 0.0011480000000000001,
+        "Long-Range": 0.019172500000000002,
+        "Neighbor-List": 0.48064650000000003,
+        "RBL-CacheCheck": 0.000732,
+        "RBL-CandidateRebuild": 9.113463,
+        "RBL-CoordinateExchange": 0.0011125,
+        "RBL-CorrectionApply": 8.2e-05,
+        "RBL-FilterSample": 0.194613,
+        "RBL-LocalReduction": 0.0001605,
+        "RBL-MPIAllreduce": 0.0001095,
+        "RBL-PairKernel": 0.025807499999999997,
+        "Short-Range": 0.026172
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.544456,
+            "RBL-CacheCheck": 0.000752,
+            "RBL-CoordinateExchange": 0.001138,
+            "RBL-CandidateRebuild": 11.116146,
+            "RBL-FilterSample": 0.194583,
+            "Short-Range": 0.026177,
+            "RBL-PairKernel": 0.025799,
+            "RBL-LocalReduction": 0.000164,
+            "RBL-MPIAllreduce": 0.000107,
+            "RBL-CorrectionApply": 8.3e-05,
+            "Long-Range": 0.019188,
+            "Bond": 0.001152,
+            "Angle": 0.00096
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 186.55364205688238,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.416837,
+            "RBL-CacheCheck": 0.000712,
+            "RBL-CoordinateExchange": 0.001087,
+            "RBL-CandidateRebuild": 7.11078,
+            "RBL-FilterSample": 0.194643,
+            "Short-Range": 0.026167,
+            "RBL-PairKernel": 0.025816,
+            "RBL-LocalReduction": 0.000157,
+            "RBL-MPIAllreduce": 0.000112,
+            "RBL-CorrectionApply": 8.1e-05,
+            "Long-Range": 0.019157,
+            "Bond": 0.001144,
+            "Angle": 0.000965
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 152.46042986703105,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.0009045980054716,
+      "errors": [],
+      "job_ids": [
+        "985944"
+      ]
+    },
+    {
+      "id": "h2o-strong-N7881948-G8",
+      "system": "h2o",
+      "atoms": 7881948,
+      "ranks": 8,
+      "grid": [
+        4,
+        2,
+        1
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.000611,
+        "Bond": 0.000642,
+        "Long-Range": 0.011037,
+        "Neighbor-List": 0.2265885,
+        "RBL-CacheCheck": 0.0010400000000000001,
+        "RBL-CandidateRebuild": 4.3943034999999995,
+        "RBL-CoordinateExchange": 0.0006215,
+        "RBL-CorrectionApply": 5.9499999999999996e-05,
+        "RBL-FilterSample": 0.0879575,
+        "RBL-LocalReduction": 0.0001205,
+        "RBL-MPIAllreduce": 0.000107,
+        "RBL-PairKernel": 0.012417500000000001,
+        "Short-Range": 0.0127035
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.234106,
+            "RBL-CacheCheck": 0.001152,
+            "RBL-CoordinateExchange": 0.000619,
+            "RBL-CandidateRebuild": 4.470512,
+            "RBL-FilterSample": 0.093313,
+            "Short-Range": 0.012708,
+            "RBL-PairKernel": 0.012415,
+            "RBL-LocalReduction": 0.000121,
+            "RBL-MPIAllreduce": 0.000112,
+            "RBL-CorrectionApply": 5.9e-05,
+            "Long-Range": 0.01103,
+            "Bond": 0.000648,
+            "Angle": 0.000612
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 87.5621681152843,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.219071,
+            "RBL-CacheCheck": 0.000928,
+            "RBL-CoordinateExchange": 0.000624,
+            "RBL-CandidateRebuild": 4.318095,
+            "RBL-FilterSample": 0.082602,
+            "Short-Range": 0.012699,
+            "RBL-PairKernel": 0.01242,
+            "RBL-LocalReduction": 0.00012,
+            "RBL-MPIAllreduce": 0.000102,
+            "RBL-CorrectionApply": 6e-05,
+            "Long-Range": 0.011044,
+            "Bond": 0.000636,
+            "Angle": 0.00061
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 81.74082808196545,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.0002106327407532,
+      "errors": [],
+      "job_ids": [
+        "985965",
+        "986050"
+      ]
+    },
+    {
+      "id": "h2o-strong-N7881948-G16",
+      "system": "h2o",
+      "atoms": 7881948,
+      "ranks": 16,
+      "grid": [
+        4,
+        4,
+        1
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.000486,
+        "Bond": 0.000509,
+        "Long-Range": 0.0071205,
+        "Neighbor-List": 0.10272300000000001,
+        "RBL-CacheCheck": 0.0013835,
+        "RBL-CandidateRebuild": 1.8503875,
+        "RBL-CoordinateExchange": 0.0006125,
+        "RBL-CorrectionApply": 5.05e-05,
+        "RBL-FilterSample": 0.0433515,
+        "RBL-LocalReduction": 9.999999999999999e-05,
+        "RBL-MPIAllreduce": 0.00010300000000000001,
+        "RBL-PairKernel": 0.006301,
+        "Short-Range": 0.006557
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.103495,
+            "RBL-CacheCheck": 0.001264,
+            "RBL-CoordinateExchange": 0.000636,
+            "RBL-CandidateRebuild": 1.877422,
+            "RBL-FilterSample": 0.043361,
+            "Short-Range": 0.006557,
+            "RBL-PairKernel": 0.006302,
+            "RBL-LocalReduction": 9.9e-05,
+            "RBL-MPIAllreduce": 0.000106,
+            "RBL-CorrectionApply": 5e-05,
+            "Long-Range": 0.007116,
+            "Bond": 0.000505,
+            "Angle": 0.000486
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 48.30531712202355,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.101951,
+            "RBL-CacheCheck": 0.001503,
+            "RBL-CoordinateExchange": 0.000589,
+            "RBL-CandidateRebuild": 1.823353,
+            "RBL-FilterSample": 0.043342,
+            "Short-Range": 0.006557,
+            "RBL-PairKernel": 0.0063,
+            "RBL-LocalReduction": 0.000101,
+            "RBL-MPIAllreduce": 0.0001,
+            "RBL-CorrectionApply": 5.1e-05,
+            "Long-Range": 0.007125,
+            "Bond": 0.000513,
+            "Angle": 0.000486
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 45.8274077209644,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.0006582315512322,
+      "errors": [],
+      "job_ids": [
+        "985966",
+        "986051"
+      ]
+    },
+    {
+      "id": "h2o-strong-N7881948-G32",
+      "system": "h2o",
+      "atoms": 7881948,
+      "ranks": 32,
+      "grid": [
+        4,
+        4,
+        2
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.00043749999999999995,
+        "Bond": 0.0004565,
+        "Long-Range": 0.005826,
+        "Neighbor-List": 0.056624499999999994,
+        "RBL-CacheCheck": 0.0009815,
+        "RBL-CandidateRebuild": 0.9757475,
+        "RBL-CoordinateExchange": 0.000597,
+        "RBL-CorrectionApply": 5.4e-05,
+        "RBL-FilterSample": 0.0250345,
+        "RBL-LocalReduction": 9.9e-05,
+        "RBL-MPIAllreduce": 0.00015999999999999999,
+        "RBL-PairKernel": 0.003439,
+        "Short-Range": 0.0037315
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.057224,
+            "RBL-CacheCheck": 0.001019,
+            "RBL-CoordinateExchange": 0.000584,
+            "RBL-CandidateRebuild": 0.993766,
+            "RBL-FilterSample": 0.02515,
+            "Short-Range": 0.003723,
+            "RBL-PairKernel": 0.003439,
+            "RBL-LocalReduction": 9.6e-05,
+            "RBL-MPIAllreduce": 0.000155,
+            "RBL-CorrectionApply": 5.2e-05,
+            "Long-Range": 0.005843,
+            "Bond": 0.000451,
+            "Angle": 0.000432
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 32.319079858018085,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.056025,
+            "RBL-CacheCheck": 0.000944,
+            "RBL-CoordinateExchange": 0.00061,
+            "RBL-CandidateRebuild": 0.957729,
+            "RBL-FilterSample": 0.024919,
+            "Short-Range": 0.00374,
+            "RBL-PairKernel": 0.003439,
+            "RBL-LocalReduction": 0.000102,
+            "RBL-MPIAllreduce": 0.000165,
+            "RBL-CorrectionApply": 5.6e-05,
+            "Long-Range": 0.005809,
+            "Bond": 0.000462,
+            "Angle": 0.000443
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 31.09719751193188,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.0017802911299611,
+      "errors": [],
+      "job_ids": [
+        "985967",
+        "986052"
+      ]
+    },
+    {
+      "id": "h2o-strong-N7881948-G64",
+      "system": "h2o",
+      "atoms": 7881948,
+      "ranks": 64,
+      "grid": [
+        8,
+        4,
+        2
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.00040399999999999995,
+        "Bond": 0.0004225,
+        "Long-Range": 0.0045769999999999995,
+        "Neighbor-List": 0.029059,
+        "RBL-CacheCheck": 0.000799,
+        "RBL-CandidateRebuild": 0.513784,
+        "RBL-CoordinateExchange": 0.000503,
+        "RBL-CorrectionApply": 4.5e-05,
+        "RBL-FilterSample": 0.0118715,
+        "RBL-LocalReduction": 9.25e-05,
+        "RBL-MPIAllreduce": 0.000326,
+        "RBL-PairKernel": 0.0019874999999999997,
+        "Short-Range": 0.0022700000000000003
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.029265,
+            "RBL-CacheCheck": 0.000772,
+            "RBL-CoordinateExchange": 0.000497,
+            "RBL-CandidateRebuild": 0.52239,
+            "RBL-FilterSample": 0.011867,
+            "Short-Range": 0.002284,
+            "RBL-PairKernel": 0.001989,
+            "RBL-LocalReduction": 9.2e-05,
+            "RBL-MPIAllreduce": 0.000334,
+            "RBL-CorrectionApply": 4.5e-05,
+            "Long-Range": 0.004621,
+            "Bond": 0.000424,
+            "Angle": 0.000403
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 22.491089993854985,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.028853,
+            "RBL-CacheCheck": 0.000826,
+            "RBL-CoordinateExchange": 0.000509,
+            "RBL-CandidateRebuild": 0.505178,
+            "RBL-FilterSample": 0.011876,
+            "Short-Range": 0.002256,
+            "RBL-PairKernel": 0.001986,
+            "RBL-LocalReduction": 9.3e-05,
+            "RBL-MPIAllreduce": 0.000318,
+            "RBL-CorrectionApply": 4.5e-05,
+            "Long-Range": 0.004533,
+            "Bond": 0.000421,
+            "Angle": 0.000405
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 22.46740738907829,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 301.73
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.017086463396671,
+      "errors": [],
+      "job_ids": [
+        "985968",
+        "986053"
+      ]
+    },
+    {
+      "id": "h2o-weak-N15763896-G8",
+      "system": "h2o",
+      "atoms": 15763896,
+      "ranks": 8,
+      "grid": [
+        2,
+        2,
+        2
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.00103,
+        "Bond": 0.0011305,
+        "Long-Range": 0.019347000000000003,
+        "Neighbor-List": 0.546512,
+        "RBL-CacheCheck": 0.0011535,
+        "RBL-CandidateRebuild": 11.481053,
+        "RBL-CoordinateExchange": 0.0011335,
+        "RBL-CorrectionApply": 8.15e-05,
+        "RBL-FilterSample": 0.184388,
+        "RBL-LocalReduction": 0.0001455,
+        "RBL-MPIAllreduce": 0.00013099999999999999,
+        "RBL-PairKernel": 0.024475999999999998,
+        "Short-Range": 0.024829499999999997
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.533586,
+            "RBL-CacheCheck": 0.001238,
+            "RBL-CoordinateExchange": 0.001104,
+            "RBL-CandidateRebuild": 11.077963,
+            "RBL-FilterSample": 0.184328,
+            "Short-Range": 0.024831,
+            "RBL-PairKernel": 0.024471,
+            "RBL-LocalReduction": 0.000145,
+            "RBL-MPIAllreduce": 0.000128,
+            "RBL-CorrectionApply": 8.1e-05,
+            "Long-Range": 0.019345,
+            "Bond": 0.001124,
+            "Angle": 0.001021
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 185.62917957175523,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 302.25
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.559438,
+            "RBL-CacheCheck": 0.001069,
+            "RBL-CoordinateExchange": 0.001163,
+            "RBL-CandidateRebuild": 11.884143,
+            "RBL-FilterSample": 0.184448,
+            "Short-Range": 0.024828,
+            "RBL-PairKernel": 0.024481,
+            "RBL-LocalReduction": 0.000146,
+            "RBL-MPIAllreduce": 0.000134,
+            "RBL-CorrectionApply": 8.2e-05,
+            "Long-Range": 0.019349,
+            "Bond": 0.001137,
+            "Angle": 0.001039
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 190.87884496385232,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 302.25
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.000022636725824,
+      "errors": [],
+      "job_ids": [
+        "985969",
+        "986054"
+      ]
+    },
+    {
+      "id": "h2o-weak-N31527792-G16",
+      "system": "h2o",
+      "atoms": 31527792,
+      "ranks": 16,
+      "grid": [
+        4,
+        2,
+        2
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.001274,
+        "Bond": 0.00136,
+        "Long-Range": 0.019551,
+        "Neighbor-List": 0.467707,
+        "RBL-CacheCheck": 0.0023925,
+        "RBL-CandidateRebuild": 8.9774875,
+        "RBL-CoordinateExchange": 0.0012075,
+        "RBL-CorrectionApply": 8.2e-05,
+        "RBL-FilterSample": 0.1844855,
+        "RBL-LocalReduction": 0.0001515,
+        "RBL-MPIAllreduce": 0.00018449999999999999,
+        "RBL-PairKernel": 0.024474,
+        "Short-Range": 0.024874
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.466815,
+            "RBL-CacheCheck": 0.002732,
+            "RBL-CoordinateExchange": 0.001211,
+            "RBL-CandidateRebuild": 8.939685,
+            "RBL-FilterSample": 0.184641,
+            "Short-Range": 0.02487,
+            "RBL-PairKernel": 0.024474,
+            "RBL-LocalReduction": 0.00015,
+            "RBL-MPIAllreduce": 0.000172,
+            "RBL-CorrectionApply": 8.1e-05,
+            "Long-Range": 0.019537,
+            "Bond": 0.001353,
+            "Angle": 0.001252
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 182.0985511308536,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 302.76
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.468599,
+            "RBL-CacheCheck": 0.002053,
+            "RBL-CoordinateExchange": 0.001204,
+            "RBL-CandidateRebuild": 9.01529,
+            "RBL-FilterSample": 0.18433,
+            "Short-Range": 0.024878,
+            "RBL-PairKernel": 0.024474,
+            "RBL-LocalReduction": 0.000153,
+            "RBL-MPIAllreduce": 0.000197,
+            "RBL-CorrectionApply": 8.3e-05,
+            "Long-Range": 0.019565,
+            "Bond": 0.001367,
+            "Angle": 0.001296
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 184.21248057298362,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 302.75
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.0008106830004277,
+      "errors": [],
+      "job_ids": [
+        "985970",
+        "986055"
+      ]
+    },
+    {
+      "id": "h2o-weak-N63055584-G32",
+      "system": "h2o",
+      "atoms": 63055584,
+      "ranks": 32,
+      "grid": [
+        4,
+        4,
+        2
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.0016675000000000001,
+        "Bond": 0.0017569999999999999,
+        "Long-Range": 0.020212,
+        "Neighbor-List": 0.457518,
+        "RBL-CacheCheck": 0.0030825,
+        "RBL-CandidateRebuild": 8.621453,
+        "RBL-CoordinateExchange": 0.001219,
+        "RBL-CorrectionApply": 8.25e-05,
+        "RBL-FilterSample": 0.18499949999999998,
+        "RBL-LocalReduction": 0.000155,
+        "RBL-MPIAllreduce": 0.000245,
+        "RBL-PairKernel": 0.024482999999999998,
+        "Short-Range": 0.024947999999999998
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.460338,
+            "RBL-CacheCheck": 0.003644,
+            "RBL-CoordinateExchange": 0.001288,
+            "RBL-CandidateRebuild": 8.69142,
+            "RBL-FilterSample": 0.18511,
+            "Short-Range": 0.024958,
+            "RBL-PairKernel": 0.024486,
+            "RBL-LocalReduction": 0.00016,
+            "RBL-MPIAllreduce": 0.00025,
+            "RBL-CorrectionApply": 8.2e-05,
+            "Long-Range": 0.020196,
+            "Bond": 0.001766,
+            "Angle": 0.001668
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 206.33580802287906,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 303.21
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.454698,
+            "RBL-CacheCheck": 0.002521,
+            "RBL-CoordinateExchange": 0.00115,
+            "RBL-CandidateRebuild": 8.551486,
+            "RBL-FilterSample": 0.184889,
+            "Short-Range": 0.024938,
+            "RBL-PairKernel": 0.02448,
+            "RBL-LocalReduction": 0.00015,
+            "RBL-MPIAllreduce": 0.00024,
+            "RBL-CorrectionApply": 8.3e-05,
+            "Long-Range": 0.020228,
+            "Bond": 0.001748,
+            "Angle": 0.001667
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 204.77307061804458,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 303.21
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.0002657571865172,
+      "errors": [],
+      "job_ids": [
+        "985971",
+        "986056"
+      ]
+    },
+    {
+      "id": "h2o-weak-N126111168-G64",
+      "system": "h2o",
+      "atoms": 126111168,
+      "ranks": 64,
+      "grid": [
+        4,
+        4,
+        4
+      ],
+      "status": "PASS",
+      "mean_stages_s": {
+        "Angle": 0.002463,
+        "Bond": 0.0025525,
+        "Long-Range": 0.020013000000000003,
+        "Neighbor-List": 0.46866300000000005,
+        "RBL-CacheCheck": 0.003445,
+        "RBL-CandidateRebuild": 8.949359999999999,
+        "RBL-CoordinateExchange": 0.001385,
+        "RBL-CorrectionApply": 8.25e-05,
+        "RBL-FilterSample": 0.184971,
+        "RBL-LocalReduction": 0.00015250000000000002,
+        "RBL-MPIAllreduce": 0.000281,
+        "RBL-PairKernel": 0.024489,
+        "Short-Range": 0.024975
+      },
+      "repeats": [
+        {
+          "repeat": 1,
+          "stages_s": {
+            "Neighbor-List": 0.475133,
+            "RBL-CacheCheck": 0.003225,
+            "RBL-CoordinateExchange": 0.001314,
+            "RBL-CandidateRebuild": 9.147319,
+            "RBL-FilterSample": 0.185289,
+            "Short-Range": 0.024964,
+            "RBL-PairKernel": 0.024488,
+            "RBL-LocalReduction": 0.000154,
+            "RBL-MPIAllreduce": 0.000271,
+            "RBL-CorrectionApply": 8.3e-05,
+            "Long-Range": 0.020011,
+            "Bond": 0.002555,
+            "Angle": 0.002464
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 259.7484410968609,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 303.6
+            }
+          ],
+          "postrun_errors": []
+        },
+        {
+          "repeat": 2,
+          "stages_s": {
+            "Neighbor-List": 0.462193,
+            "RBL-CacheCheck": 0.003665,
+            "RBL-CoordinateExchange": 0.001456,
+            "RBL-CandidateRebuild": 8.751401,
+            "RBL-FilterSample": 0.184653,
+            "Short-Range": 0.024986,
+            "RBL-PairKernel": 0.02449,
+            "RBL-LocalReduction": 0.000151,
+            "RBL-MPIAllreduce": 0.000291,
+            "RBL-CorrectionApply": 8.2e-05,
+            "Long-Range": 0.020015,
+            "Bond": 0.00255,
+            "Angle": 0.002462
+          },
+          "status": "COMPLETE",
+          "process_wall_s": 257.29334100708365,
+          "thermo": [
+            {
+              "step": 0,
+              "temperature_K_or_LJ": 298.0
+            },
+            {
+              "step": 250,
+              "temperature_K_or_LJ": 303.6
+            }
+          ],
+          "postrun_errors": []
+        }
+      ],
+      "repeat_ratio": 1.0005780989438577,
+      "errors": [],
+      "job_ids": [
+        "985972",
+        "986057"
+      ]
+    }
+  ]
+}

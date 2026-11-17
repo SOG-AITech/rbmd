@@ -1,0 +1,737 @@
+{
+  "precision": {
+    "FFT_SINGLE": "ON",
+    "KOKKOS_PREC": "single",
+    "Kokkos_ENABLE_HIP": "ON"
+  },
+  "groups": [
+    {
+      "group": "water-N583848-G4-grid221",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N583848-G4-grid221/repeat1",
+          "N": 583848,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.004020318725099602,
+            "Bond": 8.462549800796812e-06,
+            "Kspace": 0.007577290836653386,
+            "Neigh": 0.0006372111553784861,
+            "Comm": 0.0007172509960159363,
+            "Output": 2.7742629482071713e-05,
+            "Modify": 0.0015942231075697212
+          },
+          "pair_kspace_ms": 11.597609561752988,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "8fb348eafc1bf206f8d05df5f4beaf770f527d0b728a7d2b7e02d608a8b22c08",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N583848-G4-grid221/repeat2",
+          "N": 583848,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.00404581673306773,
+            "Bond": 7.70796812749004e-06,
+            "Kspace": 0.0075705179282868525,
+            "Neigh": 0.0006363346613545817,
+            "Comm": 0.0007027091633466136,
+            "Output": 3.5502390438247014e-05,
+            "Modify": 0.0016235059760956174
+          },
+          "pair_kspace_ms": 11.616334661354582,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "8fb348eafc1bf206f8d05df5f4beaf770f527d0b728a7d2b7e02d608a8b22c08",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 11.606972111553784,
+      "ratio": 1.0016145654414292,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N1313658-G4-grid221",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N1313658-G4-grid221/repeat1",
+          "N": 1313658,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.00989601593625498,
+            "Bond": 7.61593625498008e-06,
+            "Kspace": 0.012682868525896413,
+            "Neigh": 0.001419402390438247,
+            "Comm": 0.0008577290836653387,
+            "Output": 5.4135458167330676e-05,
+            "Modify": 0.001793585657370518
+          },
+          "pair_kspace_ms": 22.578884462151393,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "c7b1822a5ff4c97b036b9b5bcd06c59b202d47ab8ad89325fab9804e24f9d768",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N1313658-G4-grid221/repeat2",
+          "N": 1313658,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.009915139442231076,
+            "Bond": 7.613147410358566e-06,
+            "Kspace": 0.012390836653386455,
+            "Neigh": 0.00141597609561753,
+            "Comm": 0.0008211155378486056,
+            "Output": 4.597609561752988e-05,
+            "Modify": 0.0017767330677290838
+          },
+          "pair_kspace_ms": 22.305976095617535,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "c7b1822a5ff4c97b036b9b5bcd06c59b202d47ab8ad89325fab9804e24f9d768",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 22.442430278884466,
+      "ratio": 1.0122347645924124,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N1970487-G4-grid221",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N1970487-G4-grid221/repeat1",
+          "N": 1970487,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.014292828685258965,
+            "Bond": 8.386852589641433e-06,
+            "Kspace": 0.015456175298804782,
+            "Neigh": 0.0019862948207171314,
+            "Comm": 0.0009199601593625498,
+            "Output": 5.376892430278884e-05,
+            "Modify": 0.001955338645418327
+          },
+          "pair_kspace_ms": 29.749003984063748,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "bb1d475da9dfa11cdaf73c2a179f0d54f08e0e8241ba6715ece030a7bc73637e",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N1970487-G4-grid221/repeat2",
+          "N": 1970487,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.014300398406374502,
+            "Bond": 8.721513944223107e-06,
+            "Kspace": 0.01636772908366534,
+            "Neigh": 0.001997171314741036,
+            "Comm": 0.001016812749003984,
+            "Output": 8.673306772908366e-05,
+            "Modify": 0.0020728685258964144
+          },
+          "pair_kspace_ms": 30.668127490039844,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "bb1d475da9dfa11cdaf73c2a179f0d54f08e0e8241ba6715ece030a7bc73637e",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 30.208565737051796,
+      "ratio": 1.03089594214544,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N3940974-G4-grid221",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N3940974-G4-grid221/repeat1",
+          "N": 3940974,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.026189243027888446,
+            "Bond": 1.3479681274900398e-05,
+            "Kspace": 0.03360717131474104,
+            "Neigh": 0.003783864541832669,
+            "Comm": 0.001260159362549801,
+            "Output": 0.00010733067729083665,
+            "Modify": 0.002574621513944223
+          },
+          "pair_kspace_ms": 59.79641434262949,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "d58a0f254e649af97348a21312c34cee741c6bc85019ba1968fe6d4262d5cc78",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N3940974-G4-grid221/repeat2",
+          "N": 3940974,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.026148605577689242,
+            "Bond": 1.5901593625498007e-05,
+            "Kspace": 0.03435418326693227,
+            "Neigh": 0.0037904382470119523,
+            "Comm": 0.0013101593625498007,
+            "Output": 0.00012897211155378486,
+            "Modify": 0.002615219123505976
+          },
+          "pair_kspace_ms": 60.50278884462151,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "d58a0f254e649af97348a21312c34cee741c6bc85019ba1968fe6d4262d5cc78",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 60.149601593625505,
+      "ratio": 1.0118129909586977,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N7881948-G4-grid221",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G4-grid221/repeat1",
+          "N": 7881948,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.053625498007968134,
+            "Bond": 2.7619123505976094e-05,
+            "Kspace": 0.06589243027888447,
+            "Neigh": 0.0069948207171314745,
+            "Comm": 0.001701195219123506,
+            "Output": 0.00020427091633466136,
+            "Modify": 0.0033611155378486055
+          },
+          "pair_kspace_ms": 119.51792828685261,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "3893f730e07105dd15fe869df25b9f9a93323a86fb9299bff8a80aec30e67d42",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G4-grid221/repeat2",
+          "N": 7881948,
+          "grid": [
+            2,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.053621513944223105,
+            "Bond": 2.8144621513944223e-05,
+            "Kspace": 0.06518326693227092,
+            "Neigh": 0.007028685258964143,
+            "Comm": 0.0017373306772908367,
+            "Output": 0.00022474103585657371,
+            "Modify": 0.0034459362549800797
+          },
+          "pair_kspace_ms": 118.80478087649402,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "3893f730e07105dd15fe869df25b9f9a93323a86fb9299bff8a80aec30e67d42",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 119.16135458167332,
+      "ratio": 1.0060026827632462,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N7881948-G4-grid122",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G4-grid122/repeat1",
+          "N": 7881948,
+          "grid": [
+            1,
+            2,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.05106772908366534,
+            "Bond": 1.5572111553784862e-05,
+            "Kspace": 0.0647808764940239,
+            "Neigh": 0.006816733067729084,
+            "Comm": 0.0024041434262948207,
+            "Output": 0.0002072589641434263,
+            "Modify": 0.004035856573705179
+          },
+          "pair_kspace_ms": 115.84860557768926,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "07180a7590b051be96698b150c6eb7d3f75b9ef9c92f60679beaa3f8431f2caf",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G4-grid122/repeat2",
+          "N": 7881948,
+          "grid": [
+            1,
+            2,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.051043824701195215,
+            "Bond": 1.9588047808764942e-05,
+            "Kspace": 0.06781274900398407,
+            "Neigh": 0.0067796812749003985,
+            "Comm": 0.002693784860557769,
+            "Output": 0.0002245776892430279,
+            "Modify": 0.004436254980079681
+          },
+          "pair_kspace_ms": 118.85657370517929,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "07180a7590b051be96698b150c6eb7d3f75b9ef9c92f60679beaa3f8431f2caf",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 117.35258964143426,
+      "ratio": 1.0259646468120227,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N7881948-G8-grid421",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G8-grid421/repeat1",
+          "N": 7881948,
+          "grid": [
+            4,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.026354581673306773,
+            "Bond": 2.7902390438247012e-05,
+            "Kspace": 0.03637011952191235,
+            "Neigh": 0.0042705179282868525,
+            "Comm": 0.001400557768924303,
+            "Output": 0.00014261354581673308,
+            "Modify": 0.0028213147410358565
+          },
+          "pair_kspace_ms": 62.724701195219126,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "9c7603cdd9afc34ba907bb08a0cafeba59ebd86d9986cabb51abe7c0dc3937b3",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G8-grid421/repeat2",
+          "N": 7881948,
+          "grid": [
+            4,
+            2,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.026364940239043826,
+            "Bond": 2.4590438247011953e-05,
+            "Kspace": 0.03650358565737052,
+            "Neigh": 0.0042665338645418325,
+            "Comm": 0.0013443027888446215,
+            "Output": 0.00014444223107569723,
+            "Modify": 0.002751354581673307
+          },
+          "pair_kspace_ms": 62.86852589641434,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "9c7603cdd9afc34ba907bb08a0cafeba59ebd86d9986cabb51abe7c0dc3937b3",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 62.79661354581673,
+      "ratio": 1.0022929515558405,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N7881948-G16-grid441",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G16-grid441/repeat1",
+          "N": 7881948,
+          "grid": [
+            4,
+            4,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.014784860557768923,
+            "Bond": 2.2516733067729084e-05,
+            "Kspace": 0.02044980079681275,
+            "Neigh": 0.0022205179282868527,
+            "Comm": 0.0013560956175298806,
+            "Output": 7.723505976095618e-05,
+            "Modify": 0.002456215139442231
+          },
+          "pair_kspace_ms": 35.23466135458167,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "39c14f0c570e03342b3c9a265bb8ae6d9700cc83cf4d0d334d7cdb2262bb0e39",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G16-grid441/repeat2",
+          "N": 7881948,
+          "grid": [
+            4,
+            4,
+            1
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.01477808764940239,
+            "Bond": 2.8601593625498007e-05,
+            "Kspace": 0.01990239043824701,
+            "Neigh": 0.002208645418326693,
+            "Comm": 0.0012571314741035857,
+            "Output": 9.141434262948207e-05,
+            "Modify": 0.002380239043824701
+          },
+          "pair_kspace_ms": 34.680478087649405,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "39c14f0c570e03342b3c9a265bb8ae6d9700cc83cf4d0d334d7cdb2262bb0e39",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 34.95756972111553,
+      "ratio": 1.0159796893667858,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N7881948-G32-grid442",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G32-grid442/repeat1",
+          "N": 7881948,
+          "grid": [
+            4,
+            4,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.007705179282868526,
+            "Bond": 1.3842629482071713e-05,
+            "Kspace": 0.01688884462151394,
+            "Neigh": 0.0014876892430278886,
+            "Comm": 0.0013018326693227092,
+            "Output": 6.666135458167331e-05,
+            "Modify": 0.0021162948207171317
+          },
+          "pair_kspace_ms": 24.594023904382468,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "cd4250d3f545411d9f924da3085528a096a39cceb1e0898d5d9dae4664625eef",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G32-grid442/repeat2",
+          "N": 7881948,
+          "grid": [
+            4,
+            4,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.00770398406374502,
+            "Bond": 1.245816733067729e-05,
+            "Kspace": 0.016806772908366532,
+            "Neigh": 0.001476613545816733,
+            "Comm": 0.0013046613545816732,
+            "Output": 5.9390438247011955e-05,
+            "Modify": 0.0020467729083665336
+          },
+          "pair_kspace_ms": 24.51075697211155,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "cd4250d3f545411d9f924da3085528a096a39cceb1e0898d5d9dae4664625eef",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 24.55239043824701,
+      "ratio": 1.003397158739963,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N7881948-G64-grid842",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G64-grid842/repeat1",
+          "N": 7881948,
+          "grid": [
+            8,
+            4,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.003943466135458167,
+            "Bond": 1.15e-05,
+            "Kspace": 0.013454581673306773,
+            "Neigh": 0.0006057370517928287,
+            "Comm": 0.0009005179282868526,
+            "Output": 5.5370517928286854e-05,
+            "Modify": 0.0018027490039840637
+          },
+          "pair_kspace_ms": 17.39804780876494,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "3b240b8fc425bcb9fcc013d63489ba6da9761d25321644256f2d24c6700e1ca5",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N7881948-G64-grid842/repeat2",
+          "N": 7881948,
+          "grid": [
+            8,
+            4,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.003945019920318725,
+            "Bond": 1.015219123505976e-05,
+            "Kspace": 0.013355378486055777,
+            "Neigh": 0.0006017131474103586,
+            "Comm": 0.0008773306772908366,
+            "Output": 3.111314741035857e-05,
+            "Modify": 0.0017725896414342629
+          },
+          "pair_kspace_ms": 17.3003984063745,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "3b240b8fc425bcb9fcc013d63489ba6da9761d25321644256f2d24c6700e1ca5",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 17.34922310756972,
+      "ratio": 1.0056443441414886,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N15763896-G8-grid222",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N15763896-G8-grid222/repeat1",
+          "N": 15763896,
+          "grid": [
+            2,
+            2,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.05104780876494024,
+            "Bond": 2.866414342629482e-05,
+            "Kspace": 0.08454581673306773,
+            "Neigh": 0.006937450199203187,
+            "Comm": 0.002432430278884462,
+            "Output": 0.000258593625498008,
+            "Modify": 0.004117529880478088
+          },
+          "pair_kspace_ms": 135.59362549800795,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "8809cdbc159d6245b9c56d951141dbdeca46576c88b86f3eb11c883bcf65ce43",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N15763896-G8-grid222/repeat2",
+          "N": 15763896,
+          "grid": [
+            2,
+            2,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.0510996015936255,
+            "Bond": 2.7708764940239043e-05,
+            "Kspace": 0.08071713147410359,
+            "Neigh": 0.0069800796812749,
+            "Comm": 0.002384621513944223,
+            "Output": 0.0002935776892430279,
+            "Modify": 0.004167729083665339
+          },
+          "pair_kspace_ms": 131.8167330677291,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "8809cdbc159d6245b9c56d951141dbdeca46576c88b86f3eb11c883bcf65ce43",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 133.70517928286853,
+      "ratio": 1.0286526023091336,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N31527792-G16-grid422",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N31527792-G16-grid422/repeat1",
+          "N": 31527792,
+          "grid": [
+            4,
+            2,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.05109163346613546,
+            "Bond": 3.216454183266932e-05,
+            "Kspace": 0.08588844621513944,
+            "Neigh": 0.006999203187250996,
+            "Comm": 0.002150836653386454,
+            "Output": 0.0002760756972111554,
+            "Modify": 0.003969840637450199
+          },
+          "pair_kspace_ms": 136.9800796812749,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "8fd4b155cadb36e97d08af2637043f47b42a4f64240741da4ab592438e67e6f4",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N31527792-G16-grid422/repeat2",
+          "N": 31527792,
+          "grid": [
+            4,
+            2,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.051095617529880476,
+            "Bond": 2.837410358565737e-05,
+            "Kspace": 0.08594820717131474,
+            "Neigh": 0.006982868525896414,
+            "Comm": 0.0023141434262948205,
+            "Output": 0.0002899482071713147,
+            "Modify": 0.004087250996015936
+          },
+          "pair_kspace_ms": 137.04382470119523,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "8fd4b155cadb36e97d08af2637043f47b42a4f64240741da4ab592438e67e6f4",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 137.01195219123508,
+      "ratio": 1.000465359781281,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N63055584-G32-grid442",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N63055584-G32-grid442/repeat1",
+          "N": 63055584,
+          "grid": [
+            4,
+            4,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.0510597609561753,
+            "Bond": 2.9147011952191235e-05,
+            "Kspace": 0.08552589641434262,
+            "Neigh": 0.007044223107569721,
+            "Comm": 0.0024511155378486057,
+            "Output": 0.000309796812749004,
+            "Modify": 0.004363346613545816
+          },
+          "pair_kspace_ms": 136.5856573705179,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "cfeafc69ceba14cda3cda2e715fad2db2c8d0266ea6a4847a273573f054eac05",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N63055584-G32-grid442/repeat2",
+          "N": 63055584,
+          "grid": [
+            4,
+            4,
+            2
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.051063745019920316,
+            "Bond": 3.295657370517928e-05,
+            "Kspace": 0.08571314741035857,
+            "Neigh": 0.00702788844621514,
+            "Comm": 0.0024679282868525893,
+            "Output": 0.000317996015936255,
+            "Modify": 0.004394820717131474
+          },
+          "pair_kspace_ms": 136.77689243027888,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "cfeafc69ceba14cda3cda2e715fad2db2c8d0266ea6a4847a273573f054eac05",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 136.6812749003984,
+      "ratio": 1.0014001108421084,
+      "status": "PASS"
+    },
+    {
+      "group": "water-N126111168-G64-grid444",
+      "timings": [
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N126111168-G64-grid444/repeat1",
+          "N": 126111168,
+          "grid": [
+            4,
+            4,
+            4
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.05104780876494024,
+            "Bond": 3.0594820717131475e-05,
+            "Kspace": 0.08978486055776894,
+            "Neigh": 0.007040239043824701,
+            "Comm": 0.002751553784860558,
+            "Output": 0.0003188486055776893,
+            "Modify": 0.004629880478087649
+          },
+          "pair_kspace_ms": 140.8326693227092,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "ce66215cabbf62726305e77dbcb578ce238aa359e8229f3443a25b19ed650d93",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        },
+        {
+          "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-kokkos-current-single-20261027/water-N126111168-G64-grid444/repeat2",
+          "N": 126111168,
+          "grid": [
+            4,
+            4,
+            4
+          ],
+          "stages_seconds_per_step": {
+            "Pair": 0.05104780876494024,
+            "Bond": 3.386653386454183e-05,
+            "Kspace": 0.08600398406374501,
+            "Neigh": 0.007046215139442231,
+            "Comm": 0.002732350597609562,
+            "Output": 0.0002913187250996016,
+            "Modify": 0.00460796812749004
+          },
+          "pair_kspace_ms": 137.05179282868525,
+          "binary_sha256": "8689898e99e82fca4d9262c1837ef66dbe3f3dae2db4adb974b87efd7c0bc306",
+          "input_sha256": "ce66215cabbf62726305e77dbcb578ce238aa359e8229f3443a25b19ed650d93",
+          "scope": "sum of maximum per-rank Pair and Kspace times / 251; HIP_LAUNCH_BLOCKING=1; timer full nosync; no RBL-specific MPI barrier"
+        }
+      ],
+      "mean_ms": 138.94223107569724,
+      "ratio": 1.027587209302326,
+      "status": "PASS"
+    }
+  ]
+}

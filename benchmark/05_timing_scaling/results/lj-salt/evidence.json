@@ -1,0 +1,1203 @@
+{
+  "plan.json": {
+    "system": "lj",
+    "groups": [
+      {
+        "id": "linear-N800000-G4",
+        "N": 800000,
+        "gpus": 4,
+        "nodes": 1,
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "replicate": [
+          2,
+          2,
+          1
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N800000-G4/sync/combined"
+        ]
+      },
+      {
+        "id": "linear-N1600000-G4",
+        "N": 1600000,
+        "gpus": 4,
+        "nodes": 1,
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "replicate": [
+          2,
+          2,
+          2
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N1600000-G4/sync/combined"
+        ]
+      },
+      {
+        "id": "linear-N3600000-G4",
+        "N": 3600000,
+        "gpus": 4,
+        "nodes": 1,
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "replicate": [
+          3,
+          3,
+          2
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N3600000-G4/sync/combined"
+        ]
+      },
+      {
+        "id": "linear-N7200000-G4",
+        "N": 7200000,
+        "gpus": 4,
+        "nodes": 1,
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "replicate": [
+          3,
+          4,
+          3
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N7200000-G4/sync/combined"
+        ]
+      },
+      {
+        "id": "linear-N14400000-G4",
+        "N": 14400000,
+        "gpus": 4,
+        "nodes": 1,
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "replicate": [
+          4,
+          6,
+          3
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N14400000-G4/sync/combined"
+        ]
+      },
+      {
+        "id": "linear-N21000000-G4",
+        "N": 21000000,
+        "gpus": 4,
+        "nodes": 1,
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N21000000-G4/sync/combined"
+        ]
+      },
+      {
+        "id": "strong-N21000000-G8",
+        "N": 21000000,
+        "gpus": 8,
+        "nodes": 2,
+        "grid": [
+          2,
+          2,
+          2
+        ],
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/strong-N21000000-G8/sync/combined"
+        ]
+      },
+      {
+        "id": "strong-N21000000-G16",
+        "N": 21000000,
+        "gpus": 16,
+        "nodes": 4,
+        "grid": [
+          4,
+          2,
+          2
+        ],
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/strong-N21000000-G16/sync/combined"
+        ]
+      },
+      {
+        "id": "strong-N21000000-G32",
+        "N": 21000000,
+        "gpus": 32,
+        "nodes": 8,
+        "grid": [
+          4,
+          4,
+          2
+        ],
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/strong-N21000000-G32/sync/combined"
+        ]
+      },
+      {
+        "id": "strong-N21000000-G64",
+        "N": 21000000,
+        "gpus": 64,
+        "nodes": 16,
+        "grid": [
+          4,
+          4,
+          4
+        ],
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/strong-N21000000-G64/sync/combined"
+        ]
+      },
+      {
+        "id": "weak-N42000000-G8",
+        "N": 42000000,
+        "gpus": 8,
+        "nodes": 2,
+        "grid": [
+          2,
+          2,
+          2
+        ],
+        "replicate": [
+          5,
+          7,
+          6
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/weak-N42000000-G8/sync/combined"
+        ]
+      },
+      {
+        "id": "weak-N84000000-G16",
+        "N": 84000000,
+        "gpus": 16,
+        "nodes": 4,
+        "grid": [
+          4,
+          2,
+          2
+        ],
+        "replicate": [
+          10,
+          7,
+          6
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/weak-N84000000-G16/sync/combined"
+        ]
+      },
+      {
+        "id": "weak-N168000000-G32",
+        "N": 168000000,
+        "gpus": 32,
+        "nodes": 8,
+        "grid": [
+          4,
+          4,
+          2
+        ],
+        "replicate": [
+          10,
+          14,
+          6
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/weak-N168000000-G32/sync/combined"
+        ]
+      },
+      {
+        "id": "weak-N336000000-G64",
+        "N": 336000000,
+        "gpus": 64,
+        "nodes": 16,
+        "grid": [
+          4,
+          4,
+          4
+        ],
+        "replicate": [
+          10,
+          14,
+          12
+        ],
+        "cases": [
+          "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/weak-N336000000-G64/sync/combined"
+        ]
+      }
+    ],
+    "points": [
+      {
+        "kind": "linear",
+        "id": "linear-N800000-G4",
+        "N": 800000,
+        "gpus": 4,
+        "replicate": [
+          2,
+          2,
+          1
+        ],
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "group_id": "linear-N800000-G4"
+      },
+      {
+        "kind": "linear",
+        "id": "linear-N1600000-G4",
+        "N": 1600000,
+        "gpus": 4,
+        "replicate": [
+          2,
+          2,
+          2
+        ],
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "group_id": "linear-N1600000-G4"
+      },
+      {
+        "kind": "linear",
+        "id": "linear-N3600000-G4",
+        "N": 3600000,
+        "gpus": 4,
+        "replicate": [
+          3,
+          3,
+          2
+        ],
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "group_id": "linear-N3600000-G4"
+      },
+      {
+        "kind": "linear",
+        "id": "linear-N7200000-G4",
+        "N": 7200000,
+        "gpus": 4,
+        "replicate": [
+          3,
+          4,
+          3
+        ],
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "group_id": "linear-N7200000-G4"
+      },
+      {
+        "kind": "linear",
+        "id": "linear-N14400000-G4",
+        "N": 14400000,
+        "gpus": 4,
+        "replicate": [
+          4,
+          6,
+          3
+        ],
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "group_id": "linear-N14400000-G4"
+      },
+      {
+        "kind": "linear",
+        "id": "linear-N21000000-G4",
+        "N": 21000000,
+        "gpus": 4,
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "group_id": "linear-N21000000-G4"
+      },
+      {
+        "kind": "strong",
+        "id": "strong-N21000000-G4",
+        "N": 21000000,
+        "gpus": 4,
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "group_id": "linear-N21000000-G4"
+      },
+      {
+        "kind": "strong",
+        "id": "strong-N21000000-G8",
+        "N": 21000000,
+        "gpus": 8,
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "grid": [
+          2,
+          2,
+          2
+        ],
+        "group_id": "strong-N21000000-G8"
+      },
+      {
+        "kind": "strong",
+        "id": "strong-N21000000-G16",
+        "N": 21000000,
+        "gpus": 16,
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "grid": [
+          4,
+          2,
+          2
+        ],
+        "group_id": "strong-N21000000-G16"
+      },
+      {
+        "kind": "strong",
+        "id": "strong-N21000000-G32",
+        "N": 21000000,
+        "gpus": 32,
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "grid": [
+          4,
+          4,
+          2
+        ],
+        "group_id": "strong-N21000000-G32"
+      },
+      {
+        "kind": "strong",
+        "id": "strong-N21000000-G64",
+        "N": 21000000,
+        "gpus": 64,
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "grid": [
+          4,
+          4,
+          4
+        ],
+        "group_id": "strong-N21000000-G64"
+      },
+      {
+        "kind": "weak",
+        "id": "weak-N21000000-G4",
+        "N": 21000000,
+        "gpus": 4,
+        "replicate": [
+          5,
+          7,
+          3
+        ],
+        "grid": [
+          2,
+          2,
+          1
+        ],
+        "group_id": "linear-N21000000-G4"
+      },
+      {
+        "kind": "weak",
+        "id": "weak-N42000000-G8",
+        "N": 42000000,
+        "gpus": 8,
+        "replicate": [
+          5,
+          7,
+          6
+        ],
+        "grid": [
+          2,
+          2,
+          2
+        ],
+        "group_id": "weak-N42000000-G8"
+      },
+      {
+        "kind": "weak",
+        "id": "weak-N84000000-G16",
+        "N": 84000000,
+        "gpus": 16,
+        "replicate": [
+          10,
+          7,
+          6
+        ],
+        "grid": [
+          4,
+          2,
+          2
+        ],
+        "group_id": "weak-N84000000-G16"
+      },
+      {
+        "kind": "weak",
+        "id": "weak-N168000000-G32",
+        "N": 168000000,
+        "gpus": 32,
+        "replicate": [
+          10,
+          14,
+          6
+        ],
+        "grid": [
+          4,
+          4,
+          2
+        ],
+        "group_id": "weak-N168000000-G32"
+      },
+      {
+        "kind": "weak",
+        "id": "weak-N336000000-G64",
+        "N": 336000000,
+        "gpus": 64,
+        "replicate": [
+          10,
+          14,
+          12
+        ],
+        "grid": [
+          4,
+          4,
+          4
+        ],
+        "group_id": "weak-N336000000-G64"
+      }
+    ],
+    "smoke": [],
+    "warmup": 50,
+    "steps": 200,
+    "repeats": 1,
+    "parameters": {
+      "force_field": {
+        "type": "LJ/CUT/COUL/LONG",
+        "mixing_rule": "arithmetic"
+      },
+      "neighbor": {
+        "type": "RBL",
+        "cut_off": 16,
+        "r_core": 8,
+        "neighbor_sample_num": 30,
+        "energy_rbl_flag": "no",
+        "skin": 0.3,
+        "rbl_random_seed": 20261018
+      },
+      "coulomb": {
+        "type": "RBE",
+        "accuracy": 0.0001,
+        "coulomb_sample_num": 200,
+        "energy_rbe_flag": "no",
+        "rbe_low_modes": false,
+        "random_seed": 20261018
+      },
+      "extend": {
+        "fix_shake": false
+      }
+    },
+    "alpha": 0.024285356,
+    "pilot": {
+      "kind": "linear",
+      "id": "linear-atoms_28000000_gpus_04",
+      "N": 28000000,
+      "gpus": 4,
+      "replicate": [
+        5,
+        7,
+        4
+      ],
+      "grid": [
+        2,
+        2,
+        1
+      ]
+    },
+    "timing_note": "Original source unmodified: native Short/Long ranges, num_steps=250 yields251 evaluations; no warmup reset.",
+    "capacity_policy": {
+      "largest_pass": [
+        5,
+        7,
+        4
+      ],
+      "selected": [
+        5,
+        7,
+        3
+      ],
+      "atom_count_margin": 0.25,
+      "probe_steps": 1001,
+      "note": "Atom-count headroom is not a measured free-VRAM guarantee. Each production family stops on failed predecessor."
+    }
+  },
+  "capacity_search.json": [
+    {
+      "rep": [
+        5,
+        7,
+        4
+      ],
+      "N": 28000000,
+      "status": "PASS",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/probe-z4/sync/combined"
+    },
+    {
+      "rep": [
+        5,
+        7,
+        6
+      ],
+      "N": 42000000,
+      "status": "OOM",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/probe-z6/sync/combined"
+    },
+    {
+      "rep": [
+        5,
+        7,
+        3
+      ],
+      "N": 21000000,
+      "status": "PASS",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/confirm-z3/sync/combined"
+    }
+  ],
+  "validation.json": {
+    "status": "PASS",
+    "selected_N": 21000000,
+    "selected_atoms_per_gpu": 5250000,
+    "capacity_policy": {
+      "largest_pass": [
+        5,
+        7,
+        4
+      ],
+      "selected": [
+        5,
+        7,
+        3
+      ],
+      "atom_count_margin": 0.25,
+      "probe_steps": 1001,
+      "note": "Atom-count headroom is not a measured free-VRAM guarantee. Each production family stops on failed predecessor."
+    }
+  },
+  "submission.json": [
+    {
+      "label": "linear-N800000-G4",
+      "job": "978424",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-linear-N800000-G4",
+        "--nodes=1",
+        "--ntasks=4",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/linear-N800000-G4-%j.log",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 0"
+      ]
+    },
+    {
+      "label": "linear-N1600000-G4",
+      "job": "978425",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-linear-N1600000-G4",
+        "--nodes=1",
+        "--ntasks=4",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/linear-N1600000-G4-%j.log",
+        "--dependency=afterok:978424",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 1"
+      ]
+    },
+    {
+      "label": "linear-N3600000-G4",
+      "job": "978426",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-linear-N3600000-G4",
+        "--nodes=1",
+        "--ntasks=4",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/linear-N3600000-G4-%j.log",
+        "--dependency=afterok:978425",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 2"
+      ]
+    },
+    {
+      "label": "linear-N7200000-G4",
+      "job": "978427",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-linear-N7200000-G4",
+        "--nodes=1",
+        "--ntasks=4",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/linear-N7200000-G4-%j.log",
+        "--dependency=afterok:978426",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 3"
+      ]
+    },
+    {
+      "label": "linear-N14400000-G4",
+      "job": "978428",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-linear-N14400000-G4",
+        "--nodes=1",
+        "--ntasks=4",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/linear-N14400000-G4-%j.log",
+        "--dependency=afterok:978427",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 4"
+      ]
+    },
+    {
+      "label": "linear-N21000000-G4",
+      "job": "978429",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-linear-N21000000-G4",
+        "--nodes=1",
+        "--ntasks=4",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/linear-N21000000-G4-%j.log",
+        "--dependency=afterok:978428",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 5"
+      ]
+    },
+    {
+      "label": "strong-N21000000-G8",
+      "job": "978430",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-strong-N21000000-G8",
+        "--nodes=2",
+        "--ntasks=8",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/strong-N21000000-G8-%j.log",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 6"
+      ]
+    },
+    {
+      "label": "strong-N21000000-G16",
+      "job": "978431",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-strong-N21000000-G16",
+        "--nodes=4",
+        "--ntasks=16",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/strong-N21000000-G16-%j.log",
+        "--dependency=afterok:978430",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 7"
+      ]
+    },
+    {
+      "label": "strong-N21000000-G32",
+      "job": "978432",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-strong-N21000000-G32",
+        "--nodes=8",
+        "--ntasks=32",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/strong-N21000000-G32-%j.log",
+        "--dependency=afterok:978431",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 8"
+      ]
+    },
+    {
+      "label": "strong-N21000000-G64",
+      "job": "978433",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-strong-N21000000-G64",
+        "--nodes=16",
+        "--ntasks=64",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/strong-N21000000-G64-%j.log",
+        "--dependency=afterok:978432",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 9"
+      ]
+    },
+    {
+      "label": "weak-N42000000-G8",
+      "job": "978435",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-weak-N42000000-G8",
+        "--nodes=2",
+        "--ntasks=8",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/weak-N42000000-G8-%j.log",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 10"
+      ]
+    },
+    {
+      "label": "weak-N84000000-G16",
+      "job": "978436",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-weak-N84000000-G16",
+        "--nodes=4",
+        "--ntasks=16",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/weak-N84000000-G16-%j.log",
+        "--dependency=afterok:978435",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 11"
+      ]
+    },
+    {
+      "label": "weak-N168000000-G32",
+      "job": "978437",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-weak-N168000000-G32",
+        "--nodes=8",
+        "--ntasks=32",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/weak-N168000000-G32-%j.log",
+        "--dependency=afterok:978436",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 12"
+      ]
+    },
+    {
+      "label": "weak-N336000000-G64",
+      "job": "978438",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-weak-N336000000-G64",
+        "--nodes=16",
+        "--ntasks=64",
+        "--ntasks-per-node=4",
+        "--cpus-per-task=16",
+        "--gres=dcu:4",
+        "--mem=224G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/weak-N336000000-G64-%j.log",
+        "--dependency=afterok:978437",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py group 13"
+      ]
+    },
+    {
+      "label": "collect",
+      "job": "978439",
+      "command": [
+        "sbatch",
+        "--parsable",
+        "--partition=hx1hdnormal01",
+        "--exclude=a01r4n05,a01r4n06",
+        "--job-name=old-lj05-collect",
+        "--nodes=1",
+        "--ntasks=1",
+        "--ntasks-per-node=1",
+        "--cpus-per-task=2",
+        "--gres=dcu:1",
+        "--mem=4G",
+        "--time=08:00:00",
+        "--output=/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/logs/collect-%j.log",
+        "--dependency=afterok:978424:978425:978426:978427:978428:978429:978430:978431:978432:978433:978435:978436:978437:978438",
+        "--wrap",
+        "python3 /public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/run.py collect"
+      ]
+    }
+  ],
+  "summary.json": [
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N800000-G4/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 0.015716,
+        "RBL-CacheCheck": 0.000382,
+        "RBL-CoordinateExchange": 0.000239,
+        "RBL-CandidateRebuild": 0.311681,
+        "RBL-FilterSample": 0.004083,
+        "Short-Range": 0.001112,
+        "Long-Range": 0.002876
+      },
+      "native_short_plus_long_ms": 3.9880000000000004,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N1600000-G4/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 0.033153,
+        "RBL-CacheCheck": 0.000381,
+        "RBL-CoordinateExchange": 0.000327,
+        "RBL-CandidateRebuild": 0.697218,
+        "RBL-FilterSample": 0.00774,
+        "Short-Range": 0.001791,
+        "Long-Range": 0.004072
+      },
+      "native_short_plus_long_ms": 5.863,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N3600000-G4/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 0.09516,
+        "RBL-CacheCheck": 0.000497,
+        "RBL-CoordinateExchange": 0.000368,
+        "RBL-CandidateRebuild": 2.179545,
+        "RBL-FilterSample": 0.016784,
+        "Short-Range": 0.003607,
+        "Long-Range": 0.007095
+      },
+      "native_short_plus_long_ms": 10.702,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N7200000-G4/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 0.201094,
+        "RBL-CacheCheck": 0.000576,
+        "RBL-CoordinateExchange": 0.000519,
+        "RBL-CandidateRebuild": 4.694712,
+        "RBL-FilterSample": 0.032927,
+        "Short-Range": 0.006638,
+        "Long-Range": 0.012541
+      },
+      "native_short_plus_long_ms": 19.179000000000002,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N14400000-G4/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 0.520242,
+        "RBL-CacheCheck": 0.000879,
+        "RBL-CoordinateExchange": 0.000719,
+        "RBL-CandidateRebuild": 12.706844,
+        "RBL-FilterSample": 0.065401,
+        "Short-Range": 0.012673,
+        "Long-Range": 0.023465
+      },
+      "native_short_plus_long_ms": 36.138000000000005,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/linear-N21000000-G4/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 0.654655,
+        "RBL-CacheCheck": 0.001169,
+        "RBL-CoordinateExchange": 0.001414,
+        "RBL-CandidateRebuild": 15.631473,
+        "RBL-FilterSample": 0.095039,
+        "Short-Range": 0.0185,
+        "Long-Range": 0.033389
+      },
+      "native_short_plus_long_ms": 51.889,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/strong-N21000000-G8/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 0.665645,
+        "RBL-CacheCheck": 0.000755,
+        "RBL-CoordinateExchange": 0.002455,
+        "RBL-CandidateRebuild": 17.19365,
+        "RBL-FilterSample": 0.04784,
+        "Short-Range": 0.010046,
+        "Long-Range": 0.017748
+      },
+      "native_short_plus_long_ms": 27.794,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/strong-N21000000-G16/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 0.247476,
+        "RBL-CacheCheck": 0.000631,
+        "RBL-CoordinateExchange": 0.001375,
+        "RBL-CandidateRebuild": 6.197938,
+        "RBL-FilterSample": 0.024221,
+        "Short-Range": 0.005605,
+        "Long-Range": 0.009871
+      },
+      "native_short_plus_long_ms": 15.476,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/strong-N21000000-G32/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 0.130411,
+        "RBL-CacheCheck": 0.000474,
+        "RBL-CoordinateExchange": 0.000852,
+        "RBL-CandidateRebuild": 3.267926,
+        "RBL-FilterSample": 0.012451,
+        "Short-Range": 0.00312,
+        "Long-Range": 0.006288
+      },
+      "native_short_plus_long_ms": 9.408,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/strong-N21000000-G64/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 0.05383,
+        "RBL-CacheCheck": 0.000458,
+        "RBL-CoordinateExchange": 0.000837,
+        "RBL-CandidateRebuild": 1.292546,
+        "RBL-FilterSample": 0.006567,
+        "Short-Range": 0.002225,
+        "Long-Range": 0.004284
+      },
+      "native_short_plus_long_ms": 6.5089999999999995,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/weak-N42000000-G8/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 1.357007,
+        "RBL-CacheCheck": 0.001343,
+        "RBL-CoordinateExchange": 0.002622,
+        "RBL-CandidateRebuild": 35.188344,
+        "RBL-FilterSample": 0.095053,
+        "Short-Range": 0.01953,
+        "Long-Range": 0.033562
+      },
+      "native_short_plus_long_ms": 53.092,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/weak-N84000000-G16/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 2.018655,
+        "RBL-CacheCheck": 0.001295,
+        "RBL-CoordinateExchange": 0.00293,
+        "RBL-CandidateRebuild": 53.633034,
+        "RBL-FilterSample": 0.095049,
+        "Short-Range": 0.019395,
+        "Long-Range": 0.033783
+      },
+      "native_short_plus_long_ms": 53.178000000000004,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/weak-N168000000-G32/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 2.078793,
+        "RBL-CacheCheck": 0.00136,
+        "RBL-CoordinateExchange": 0.002908,
+        "RBL-CandidateRebuild": 55.311133,
+        "RBL-FilterSample": 0.095052,
+        "Short-Range": 0.020225,
+        "Long-Range": 0.034156
+      },
+      "native_short_plus_long_ms": 54.381,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    },
+    {
+      "binary_sha256": "13335616d151aaac77e4ce68aaec06ab370c8a4bc4fbb2666d162cf0a3a0dd29",
+      "case": "/public/home/acymkxdx47/ReviewRBMD/NewBenchmark/runs/05-lj-large-original-20261026/weak-N336000000-G64/sync/combined",
+      "stages_seconds_per_step": {
+        "Neighbor-List": 2.326385,
+        "RBL-CacheCheck": 0.001523,
+        "RBL-CoordinateExchange": 0.003105,
+        "RBL-CandidateRebuild": 62.20012,
+        "RBL-FilterSample": 0.095059,
+        "Short-Range": 0.020351,
+        "Long-Range": 0.03414
+      },
+      "native_short_plus_long_ms": 54.491,
+      "scope": "legacy native timings; initialization excluded, no 50-step warmup reset; source loop executes num_steps+1; not interchangeable with new workflow scopes"
+    }
+  ]
+}
