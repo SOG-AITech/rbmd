@@ -43,13 +43,9 @@ Simulation inputs are JSON files. See the [JSON Configuration Reference](docs/js
 
 ## Benchmarks
 
-The `benchmark/` directory contains curated configurations, Slurm submission scripts, shared input data, RDF results, and result workbooks for three systems:
+The [benchmark scripts](benchmark) cover force accuracy, observables and scaling. Use the [paper branch](https://github.com/SOG-AITech/rbmd/tree/paper) for the diagnostic implementation and regression tests.
 
-| System | Records | Workbook |
-| --- | --- | --- |
-| H2O | [`benchmark/h2o`](benchmark/h2o) | `benchmark/h2o/workbook/run_H2O.xlsx` |
-| LJ-salt | [`benchmark/lj_salt`](benchmark/lj_salt) | `benchmark/lj_salt/workbook/run_LJ_salt.xlsx` |
-| PEO-LiTFSI | [`benchmark/peo_litfsi`](benchmark/peo_litfsi) | `benchmark/peo_litfsi/workbook/run_PEO.xlsx` |
+Numerical results, plotting workbooks and run records are in the [results archive](https://github.com/SOG-AITech/rbmd/releases/download/benchmark-lj-200000/rbmd-revision-results.tar.gz). Its README indexes the archived directories.
 
 ### Benchmark input data
 

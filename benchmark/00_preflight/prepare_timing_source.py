@@ -25,21 +25,16 @@ def sample_diagnostics(text):
 def patch(source,dest):
     if dest.exists():raise ValueError('Destination exists; keep source/build evidence immutable')
     changes={}
-    for name,count in [('src/force/src/cvff.cpp',2),('src/force/src/lj_cut_coul_kspace.cpp',6),('src/force/src/kspace_calculator.cpp',6)]:
-        old=(source/name).read_text();changes[name]=(old,guarded(old,count))
-    name='src/simulate_pipeline/src/simulate.cpp';old=(source/name).read_text();new=old
-    for anchor in ('    rbmd::revision::DeviceSynchronize();\n    const auto step_start',
-                   '    rbmd::revision::DeviceSynchronize();\n    const double seconds'):
-        if new.count(anchor)!=1:raise ValueError('Step timing source changed; inspect manually')
-        new=new.replace(anchor,anchor.replace('rbmd::revision::DeviceSynchronize();','if (diagnostics.isolated_timing) rbmd::revision::DeviceSynchronize();'))
-    new=new.replace('frozen ? "Frozen-Evaluation-Wall" : "Step-Wall"','frozen ? "Frozen-Evaluation-Wall" : (diagnostics.isolated_timing ? "Step-Wall" : "Step-HostSubmission-Wall")')
-    changes[name]=(old,new)
-    name='src/simulate_pipeline/src/ensemble.cpp';old=(source/name).read_text()
-    anchor='const bool timing = rbmd::revision::GetOptions().enabled;'
-    if old.count(anchor)!=1:raise ValueError('Force timing source changed')
-    changes[name]=(old,old.replace(anchor,'const bool timing = rbmd::revision::GetOptions().isolated_timing;'))
-    name='src/neighbor_list/src/neighbor_list_builder/rbl_full_neighbor_list_builder.cpp'
-    old=(source/name).read_text();changes[name]=(old,sample_diagnostics(old))
+    required = {
+        'src/simulate_pipeline/src/simulate.cpp': 'if (diagnostics.isolated_timing)',
+        'src/neighbor_list/src/neighbor_list_builder/rbl_full_neighbor_list_builder.cpp': 'RecordBenchmarkRblSamples',
+        'src/simulate_pipeline/src/ensemble.cpp': 'GetOptions().isolated_timing',
+    }
+    for name, marker in required.items():
+        text = (source/name).read_text()
+        if marker not in text:
+            raise ValueError('Use the public paper branch with integrated diagnostics: ' + name)
+        changes[name] = (text, text)
     dest.mkdir(parents=True)
     shutil.copy2(source/'CMakeLists.txt',dest/'CMakeLists.txt')
     (dest/'scripts').mkdir()
